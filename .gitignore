@@ -1,3 +1,10 @@
-.DS_Store
+# Build artifacts
 build/
 tun-proxy
+helper/tun-proxy-helper
+
+# Runtime files
+*.log
+
+# macOS
+.DS_Store
