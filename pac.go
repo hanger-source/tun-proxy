@@ -46,27 +46,6 @@ func parsePACFile(path string) *PACRules {
 	}
 	content := string(data)
 
-	// Extract only the declared domain arrays (not all strings in the file)
-	declaredDomains := extractJSArray(content, "var domains")
-	declaredHosts := extractJSArray(content, "var hostArr")
-
-	// Build test list: only declared domains (typically < 200)
-	var testDomains []string
-	for _, d := range declaredDomains {
-		if isValidDomain(d) {
-			testDomains = append(testDomains, d)
-		}
-	}
-	for _, d := range declaredHosts {
-		clean := strings.TrimPrefix(d, "*.")
-		if isValidDomain(clean) {
-			testDomains = append(testDomains, clean)
-		}
-	}
-
-	logInfo("PAC: testing %d declared domains via FindProxyForURL", len(testDomains))
-
-	// Execute PAC with goja
 	vm := goja.New()
 	vm.Set("isPlainHostName", func(host string) bool { return !strings.Contains(host, ".") })
 	vm.Set("dnsDomainIs", func(host, domain string) bool {
@@ -88,6 +67,36 @@ func parsePACFile(path string) *PACRules {
 		logError("PAC JS execution failed: %v", err)
 		return nil
 	}
+
+	// Read domain arrays directly from JS VM
+	var testDomains []string
+	if arr := vm.Get("domains"); arr != nil {
+		if exported := arr.Export(); exported != nil {
+			if list, ok := exported.([]interface{}); ok {
+				for _, v := range list {
+					if s, ok := v.(string); ok && isValidDomain(s) {
+						testDomains = append(testDomains, s)
+					}
+				}
+			}
+		}
+	}
+	if arr := vm.Get("hostArr"); arr != nil {
+		if exported := arr.Export(); exported != nil {
+			if list, ok := exported.([]interface{}); ok {
+				for _, v := range list {
+					if s, ok := v.(string); ok {
+						clean := strings.TrimPrefix(s, "*.")
+						if isValidDomain(clean) {
+							testDomains = append(testDomains, clean)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	logInfo("PAC: testing %d declared domains via FindProxyForURL", len(testDomains))
 
 	findProxy, ok := goja.AssertFunction(vm.Get("FindProxyForURL"))
 	if !ok {
@@ -116,30 +125,6 @@ func parsePACFile(path string) *PACRules {
 	logInfo("PAC result: %d proxy domains, %d direct domains, %d direct CIDRs",
 		len(rules.ProxyDomains), len(rules.DirectDomains), len(rules.DirectCIDRs))
 	return rules
-}
-
-func extractJSArray(content, varDecl string) []string {
-	idx := strings.Index(content, varDecl)
-	if idx < 0 {
-		return nil
-	}
-	start := strings.Index(content[idx:], "[")
-	if start < 0 {
-		return nil
-	}
-	start += idx
-	end := strings.Index(content[start:], "];")
-	if end < 0 {
-		return nil
-	}
-	block := content[start : start+end+1]
-	re := regexp.MustCompile(`"([^"]+)"`)
-	matches := re.FindAllStringSubmatch(block, -1)
-	var result []string
-	for _, m := range matches {
-		result = append(result, m[1])
-	}
-	return result
 }
 
 func extractCIDRPairs(content string) []string {
