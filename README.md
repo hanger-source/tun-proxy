@@ -53,7 +53,6 @@ TunProxy 使用 sing-box 原生规则集格式进行分流。规则文件放在 
 - `ruleset-proxy.json` — 匹配的域名强制走代理
 - `ruleset-direct.json` — 匹配的域名/IP 强制直连
 - 不匹配任何规则的流量 → 走代理（默认）
-- `.cn` 域名 → 直连
 - 私有 IP → 直连
 
 规则文件格式（sing-box rule-set）：
@@ -86,11 +85,13 @@ TunProxy 使用 sing-box 原生规则集格式进行分流。规则文件放在 
 ## 技术原理
 
 1. 创建 TUN 虚拟网卡（utun）接管所有流量
-2. 通过 `route_exclude_address` 排除代理服务器 IP，防止路由回环
-3. 启动时自动解析代理服务器域名获取最新 IP
-4. 规则分流：加载 JSON 规则集，生成 sing-box 路由配置
-5. Privileged Helper 以 root 运行 sing-box（TUN 需要 root 权限创建网卡）
-6. App 通过 Unix Socket 与 Helper 通信（启动/停止 sing-box）
+2. TLS SNI 嗅探（sniff）提取域名，实现基于域名的路由分流
+3. 通过 `route_exclude_address` 排除代理服务器 IP，防止路由回环
+4. 启动时自动解析代理服务器域名获取最新 IP
+5. 规则分流：加载 JSON 规则集，生成 sing-box 路由和 DNS 配置
+6. 直连域名使用系统 DNS 解析，避免内网域名经代理 DNS 解析到错误 IP
+7. Privileged Helper 以 root 运行 sing-box（TUN 需要 root 权限创建网卡）
+8. App 通过 Unix Socket 与 Helper 通信（启动/停止 sing-box）
 
 ## 项目结构
 
