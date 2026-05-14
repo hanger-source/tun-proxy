@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -17,6 +18,16 @@ func promptInput(title, defaultValue string) string {
 		return strings.TrimSpace(result[idx+len("text returned:"):])
 	}
 	return ""
+}
+
+func promptFileChooser(title string) string {
+	script := fmt.Sprintf(`set f to choose file with prompt "%s" without invisibles
+return POSIX path of f`, title)
+	out, err := exec.Command("osascript", "-e", script).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func showAlert(msg string) {

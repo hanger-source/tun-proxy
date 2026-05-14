@@ -43,6 +43,7 @@ func onReady() {
 	mSetPAC := systray.AddMenuItem("设置 PAC 文件路径...", "白名单域名直连")
 	mTestRoute := systray.AddMenuItem("测试域名路由...", "输入域名查看走代理还是直连")
 	mAutoStart := systray.AddMenuItemCheckbox("开机启动", "", isAutoStartEnabled())
+	mViewLog := systray.AddMenuItem("查看路由日志", "打开控制台查看连接记录")
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "")
 
@@ -102,14 +103,17 @@ func onReady() {
 				}
 
 			case <-mSetPAC.ClickedCh:
-				path := promptInput("输入 PAC 文件路径（留空则不使用）", app.PACPath)
-				app.PACPath = path
-				app.SaveConfig()
+				path := promptFileChooser("选择 PAC 文件")
 				if path != "" {
-					mStatus.SetTitle("✅ PAC 路径已设置")
-					showAlert("PAC 路径已保存: " + path)
-				} else {
-					mStatus.SetTitle("✅ PAC 已清除，使用默认规则")
+					app.PACPath = path
+					app.SaveConfig()
+					mStatus.SetTitle("✅ PAC: " + path)
+					showAlert("PAC 文件已设置")
+					if app.Connected {
+						app.Disconnect()
+						app.Connect()
+						mStatus.SetTitle("✅ 已连接 - " + app.Nodes[app.SelectedNode].Name + " (PAC)")
+					}
 				}
 
 			case <-mTestRoute.ClickedCh:
@@ -134,6 +138,9 @@ func onReady() {
 						showAlert("已开启开机启动")
 					}
 				}
+
+			case <-mViewLog.ClickedCh:
+				app.OpenLog()
 
 			case <-mQuit.ClickedCh:
 				app.Disconnect()

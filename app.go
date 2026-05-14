@@ -123,9 +123,13 @@ func (a *App) Connect() error {
 	// Start sing-box with sudo
 	binary := a.SingBoxBinary()
 	logInfo("sing-box binary: %s", binary)
+
+	// Open log file for sing-box output
+	logFile, _ := os.OpenFile(a.SingBoxLogPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+
 	a.cmd = exec.Command("sudo", "-n", binary, "run", "-c", a.SingBoxConfigPath())
-	a.cmd.Stdout = os.Stdout
-	a.cmd.Stderr = os.Stderr
+	a.cmd.Stdout = logFile
+	a.cmd.Stderr = logFile
 
 	err := a.cmd.Start()
 	if err != nil {
@@ -162,6 +166,16 @@ func (a *App) Disconnect() {
 	exec.Command("sudo", "-n", "pkill", "-f", "sing-box run").Run()
 	a.Connected = false
 	logInfo("disconnected")
+}
+
+func (a *App) SingBoxLogPath() string {
+	return filepath.Join(a.ConfigDir(), "singbox-route.log")
+}
+
+func (a *App) OpenLog() {
+	logPath := a.SingBoxLogPath()
+	// Open in Console.app
+	exec.Command("open", "-a", "Console", logPath).Run()
 }
 
 func resolveServerIPs(nodes []Node) []string {
