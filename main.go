@@ -19,6 +19,69 @@ func main() {
 	systray.Run(onReady, onExit)
 }
 
+// Shared state for node menu management
+var (
+	nodeItems    []*systray.MenuItem
+	nodeCancelCh chan struct{}
+)
+
+func setupNodeListeners(app *App, mStatus *systray.MenuItem) {
+	// Stop old goroutines
+	if nodeCancelCh != nil {
+		close(nodeCancelCh)
+	}
+	nodeCancelCh = make(chan struct{})
+
+	for i, item := range nodeItems {
+		go func(idx int, menuItem *systray.MenuItem, cancel chan struct{}) {
+			for {
+				select {
+				case <-cancel:
+					return
+				case <-menuItem.ClickedCh:
+					app.SelectedNode = idx
+					for j, it := range nodeItems {
+						if j == idx {
+							it.Check()
+						} else {
+							it.Uncheck()
+						}
+					}
+					app.SaveConfig()
+					if app.Connected {
+						mStatus.SetTitle("切换中...")
+						app.Disconnect()
+						err := app.Connect()
+						if err != nil {
+							mStatus.SetTitle("[ERR] " + err.Error())
+						} else {
+							mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
+							showAlert("已连接: " + app.Nodes[app.SelectedNode].Name)
+						}
+					}
+				}
+			}
+		}(i, item, nodeCancelCh)
+	}
+}
+
+func rebuildNodeMenu(app *App, mNodes *systray.MenuItem, mStatus *systray.MenuItem) {
+	// Hide old items
+	for _, item := range nodeItems {
+		item.Hide()
+	}
+	nodeItems = nil
+
+	// Create new items
+	for i, n := range app.Nodes {
+		item := mNodes.AddSubMenuItemCheckbox(n.Name, n.Server, i == app.SelectedNode)
+		nodeItems = append(nodeItems, item)
+	}
+
+	// Start listeners
+	setupNodeListeners(app, mStatus)
+}
+
 func onReady() {
 	systray.SetTemplateIcon(iconOff, iconOff)
 	systray.SetTitle("")
@@ -27,7 +90,6 @@ func onReady() {
 	app := NewApp()
 	app.LoadConfig()
 
-	// Install helper on first launch (shows system auth dialog if needed)
 	if err := installHelperIfNeeded(); err != nil {
 		logError("helper install failed: %v", err)
 	}
@@ -41,13 +103,12 @@ func onReady() {
 	mDisconnect.Hide()
 	systray.AddSeparator()
 
-	// Node selection submenu
 	mNodes := systray.AddMenuItem("节点", "选择代理节点")
-	var nodeItems []*systray.MenuItem
 	for i, n := range app.Nodes {
 		item := mNodes.AddSubMenuItemCheckbox(n.Name, n.Server, i == app.SelectedNode)
 		nodeItems = append(nodeItems, item)
 	}
+	setupNodeListeners(app, mStatus)
 
 	systray.AddSeparator()
 	mSubscribe := systray.AddMenuItem("更新订阅", "拉取最新节点")
@@ -57,12 +118,12 @@ func onReady() {
 	mAutoStart := systray.AddMenuItemCheckbox("开机启动", "", isAutoStartEnabled())
 	mViewLog := systray.AddMenuItem("查看路由日志", "打开控制台查看连接记录")
 	systray.AddSeparator()
-	mVersion := systray.AddMenuItem("TunProxy v" + Version, "")
+	mVersion := systray.AddMenuItem("TunProxy v"+Version, "")
 	mVersion.Disable()
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "")
 
-	// Auto-connect to last used node on startup
+	// Auto-connect on startup
 	if len(app.Nodes) > 0 {
 		go func() {
 			mStatus.SetTitle("连接中...")
@@ -108,48 +169,26 @@ func onReady() {
 
 			case <-mSubscribe.ClickedCh:
 				mStatus.SetTitle("更新订阅中...")
+				prevName := ""
+				if app.SelectedNode < len(app.Nodes) {
+					prevName = app.Nodes[app.SelectedNode].Name
+				}
 				err := app.UpdateSubscription()
 				if err != nil {
 					mStatus.SetTitle("[ERR] " + err.Error())
 					continue
 				}
-				// Rebuild node menu
-				for _, item := range nodeItems {
-					item.Hide()
-				}
-				nodeItems = nil
-				for i, n := range app.Nodes {
-					item := mNodes.AddSubMenuItemCheckbox(n.Name, n.Server, i == 0)
-					nodeItems = append(nodeItems, item)
-				}
-				// Start click listeners for new items
-				for i, item := range nodeItems {
-					go func(idx int, menuItem *systray.MenuItem) {
-						for range menuItem.ClickedCh {
-							app.SelectedNode = idx
-							for j, it := range nodeItems {
-								if j == idx {
-									it.Check()
-								} else {
-									it.Uncheck()
-								}
-							}
-							app.SaveConfig()
-							if app.Connected {
-								mStatus.SetTitle("切换中...")
-								app.Disconnect()
-								err := app.Connect()
-								if err != nil {
-									mStatus.SetTitle("[ERR] " + err.Error())
-								} else {
-									mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
-								}
-							}
+				// Try to keep previous selection
+				if prevName != "" {
+					for i, n := range app.Nodes {
+						if n.Name == prevName {
+							app.SelectedNode = i
+							break
 						}
-					}(i, item)
+					}
 				}
-				app.SelectedNode = 0
 				app.SaveConfig()
+				rebuildNodeMenu(app, mNodes, mStatus)
 				mStatus.SetTitle(fmt.Sprintf("已更新 %d 个节点", len(app.Nodes)))
 
 			case <-mSetURL.ClickedCh:
@@ -164,7 +203,6 @@ func onReady() {
 			case <-mSetPAC.ClickedCh:
 				path := promptFileChooser("选择 PAC 文件")
 				if path != "" {
-					// Copy PAC to app config dir to avoid repeated permission prompts
 					destPath := filepath.Join(app.ConfigDir(), "pac.js")
 					data, err := os.ReadFile(path)
 					if err == nil {
@@ -175,12 +213,12 @@ func onReady() {
 					}
 					ClearPACCache()
 					app.SaveConfig()
-					mStatus.SetTitle("PAC: " + path)
+					mStatus.SetTitle("PAC 已设置")
 					showAlert("PAC 文件已设置")
 					if app.Connected {
 						app.Disconnect()
 						app.Connect()
-						mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name + " (PAC)")
+						mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
 					}
 				}
 
@@ -198,8 +236,7 @@ func onReady() {
 					mAutoStart.Uncheck()
 					showAlert("已关闭开机启动")
 				} else {
-					err := enableAutoStart()
-					if err != nil {
+					if err := enableAutoStart(); err != nil {
 						showAlert("设置失败: " + err.Error())
 					} else {
 						mAutoStart.Check()
@@ -217,34 +254,6 @@ func onReady() {
 			}
 		}
 	}()
-
-	// Handle node selection - launch goroutine per node
-	for i, item := range nodeItems {
-		go func(idx int, menuItem *systray.MenuItem) {
-			for range menuItem.ClickedCh {
-				app.SelectedNode = idx
-				for j, it := range nodeItems {
-					if j == idx {
-						it.Check()
-					} else {
-						it.Uncheck()
-					}
-				}
-				app.SaveConfig()
-				if app.Connected {
-					mStatus.SetTitle("切换中...")
-					app.Disconnect()
-					err := app.Connect()
-					if err != nil {
-						mStatus.SetTitle("[ERR] " + err.Error())
-					} else {
-						mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
-				showAlert("已连接: " + app.Nodes[app.SelectedNode].Name)
-					}
-				}
-			}
-		}(i, item)
-	}
 }
 
 func onExit() {}
