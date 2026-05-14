@@ -73,6 +73,7 @@ func onReady() {
 					continue
 				}
 				mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
+				showAlert("已连接: " + app.Nodes[app.SelectedNode].Name)
 				systray.SetTemplateIcon(iconOn, iconOn)
 				mConnect.Hide()
 				mDisconnect.Show()
@@ -183,6 +184,7 @@ func onReady() {
 						mStatus.SetTitle("[ERR] " + err.Error())
 					} else {
 						mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
+				showAlert("已连接: " + app.Nodes[app.SelectedNode].Name)
 					}
 				}
 			}
