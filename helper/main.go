@@ -113,10 +113,12 @@ func startSingBox(binary, config, logPath string) error {
 	singboxCmd = exec.Command(binary, "run", "-c", config)
 
 	if logPath != "" {
-		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err == nil {
 			singboxCmd.Stdout = f
 			singboxCmd.Stderr = f
+			// Ensure file is world-writable so app user can also write
+			os.Chmod(logPath, 0666)
 		}
 	}
 

@@ -204,7 +204,7 @@ func (a *App) Disconnect() {
 }
 
 func (a *App) SingBoxLogPath() string {
-	return filepath.Join(a.ConfigDir(), "singbox.log")
+	return filepath.Join(a.ConfigDir(), "tun-proxy.log")
 }
 
 func (a *App) OpenLog() {
