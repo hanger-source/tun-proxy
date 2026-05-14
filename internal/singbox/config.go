@@ -30,6 +30,21 @@ func ResolveServerIPs(nodes []config.Node) []string {
 	return ips
 }
 
+func buildDNSRules(proxyDomains []string, ruleSet *rules.Rules) []map[string]interface{} {
+	var dnsRules []map[string]interface{}
+	if len(proxyDomains) > 0 {
+		dnsRules = append(dnsRules, map[string]interface{}{
+			"domain": proxyDomains, "server": "dns-direct",
+		})
+	}
+	if ruleSet != nil && len(ruleSet.DirectDomains) > 0 {
+		dnsRules = append(dnsRules, map[string]interface{}{
+			"domain_suffix": ruleSet.DirectDomains, "server": "dns-direct",
+		})
+	}
+	return dnsRules
+}
+
 func GenerateConfig(nodes []config.Node, selected int, excludeIPs []string, ruleSet *rules.Rules) map[string]interface{} {
 	var outboundNames []string
 	var outbounds []map[string]interface{}
@@ -77,8 +92,7 @@ func GenerateConfig(nodes []config.Node, selected int, excludeIPs []string, rule
 	allOutbounds = append(allOutbounds, outbounds...)
 	allOutbounds = append(allOutbounds, map[string]interface{}{"type": "direct", "tag": "direct"})
 
-	excludeAddrs := []string{"223.5.5.5/32", "10.0.0.0/8"}
-	excludeAddrs = append(excludeAddrs, excludeIPs...)
+	excludeAddrs := append([]string{}, excludeIPs...)
 
 	var proxyDomains []string
 	for _, n := range nodes {
@@ -89,7 +103,6 @@ func GenerateConfig(nodes []config.Node, selected int, excludeIPs []string, rule
 
 	routeRules := []map[string]interface{}{
 		{"ip_is_private": true, "outbound": "direct"},
-		{"domain_suffix": ".cn", "outbound": "direct"},
 	}
 	if ruleSet != nil {
 		if len(ruleSet.ProxyDomains) > 0 {
@@ -107,26 +120,25 @@ func GenerateConfig(nodes []config.Node, selected int, excludeIPs []string, rule
 		"log": map[string]interface{}{"level": "info", "timestamp": true},
 		"dns": map[string]interface{}{
 			"servers": []map[string]interface{}{
-				{"tag": "dns-remote", "address": "tcp://8.8.8.8", "detour": "proxy"},
-				{"tag": "dns-direct", "address": "223.5.5.5", "detour": "direct"},
+				{"tag": "dns-remote", "address": "tcp://1.1.1.1", "detour": "proxy"},
+				{"tag": "dns-direct", "address": "local", "detour": "direct"},
 			},
-			"rules": []map[string]interface{}{
-				{"domain_suffix": []string{".cn"}, "server": "dns-direct"},
-				{"domain": proxyDomains, "server": "dns-direct"},
-			},
+			"rules": buildDNSRules(proxyDomains, ruleSet),
 			"final":             "dns-remote",
 			"strategy":          "prefer_ipv4",
 			"independent_cache": true,
 		},
 		"inbounds": []map[string]interface{}{
 			{
-				"type":                   "tun",
-				"tag":                    "tun-in",
-				"address":               []string{"172.19.0.1/28"},
-				"auto_route":            true,
-				"strict_route":          true,
-				"stack":                 "gvisor",
-				"route_exclude_address": excludeAddrs,
+				"type":                       "tun",
+				"tag":                        "tun-in",
+				"address":                   []string{"172.19.0.1/28"},
+				"auto_route":                true,
+				"strict_route":              true,
+				"stack":                     "gvisor",
+				"sniff":                     true,
+				"sniff_override_destination": false,
+				"route_exclude_address":     excludeAddrs,
 			},
 		},
 		"outbounds": allOutbounds,

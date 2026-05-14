@@ -68,7 +68,7 @@ func (e *Engine) Stop() {
 
 func (e *Engine) verify(ctx context.Context) error {
 	d := net.Dialer{Timeout: 3 * time.Second}
-	conn, err := d.DialContext(ctx, "tcp", "8.8.8.8:443")
+	conn, err := d.DialContext(ctx, "tcp", "1.1.1.1:443")
 	if err != nil {
 		return err
 	}
