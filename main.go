@@ -26,6 +26,11 @@ func onReady() {
 	app := NewApp()
 	app.LoadConfig()
 
+	// Install helper on first launch (shows system auth dialog if needed)
+	if err := installHelperIfNeeded(); err != nil {
+		logError("helper install failed: %v", err)
+	}
+
 	mStatus := systray.AddMenuItem("[OFF] 已断开", "")
 	mStatus.Disable()
 	systray.AddSeparator()

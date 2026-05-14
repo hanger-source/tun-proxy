@@ -51,6 +51,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -64,9 +65,9 @@ func isHelperInstalled() bool {
 	if err != nil {
 		return false
 	}
-	// Check if daemon is loaded
-	out, _ := exec.Command("launchctl", "list", "com.hanger.tun-proxy.helper").Output()
-	return len(out) > 0
+	// Check if daemon is running in system domain
+	out, _ := exec.Command("launchctl", "print", "system/com.hanger.tun-proxy.helper").CombinedOutput()
+	return !strings.Contains(string(out), "Could not find")
 }
 
 func installHelperIfNeeded() error {
@@ -104,9 +105,11 @@ func installHelperIfNeeded() error {
 	script := fmt.Sprintf(
 		`cp "%s" "%s" && chmod 755 "%s" && chown root:wheel "%s" && `+
 			`cp "%s" "%s" && chmod 644 "%s" && chown root:wheel "%s" && `+
-			`launchctl load -w "%s"`,
+			`launchctl bootout system/%s 2>/dev/null; `+
+			`launchctl bootstrap system "%s"`,
 		helperSrc, helperInstallPath, helperInstallPath, helperInstallPath,
 		plistSrc, plistInstallPath, plistInstallPath, plistInstallPath,
+		"com.hanger.tun-proxy.helper",
 		plistInstallPath,
 	)
 

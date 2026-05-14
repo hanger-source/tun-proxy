@@ -151,12 +151,6 @@ func (a *App) startSingBox(nodeIdx int) error {
 	binary := a.SingBoxBinary()
 	logInfo("sing-box binary: %s", binary)
 
-	// Install helper if needed (first time only, shows system auth dialog)
-	if err := installHelperIfNeeded(); err != nil {
-		logError("helper install failed: %v", err)
-		return fmt.Errorf("安装 helper 失败: %v", err)
-	}
-
 	// Send start command to helper daemon
 	resp, err := sendHelperCommand(HelperRequest{
 		Action:     "start",
