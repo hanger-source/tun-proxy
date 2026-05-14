@@ -1,4 +1,4 @@
-package main
+package pac
 
 import (
 	"crypto/md5"
@@ -11,37 +11,36 @@ import (
 	"github.com/dop251/goja"
 )
 
-type PACRules struct {
+type Rules struct {
 	ProxyDomains  []string
 	DirectDomains []string
 	DirectCIDRs   []string
 }
 
-var pacCache *PACRules
-var pacFileHash string
+var cache *Rules
+var cacheHash string
 
-func GetPACRules(path string) *PACRules {
+func GetRules(path string) *Rules {
 	if path == "" {
 		return nil
 	}
 	hash := fileHash(path)
-	if hash == pacFileHash && pacCache != nil {
-		return pacCache
+	if hash == cacheHash && cache != nil {
+		return cache
 	}
-	pacCache = parsePACFile(path)
-	pacFileHash = hash
-	return pacCache
+	cache = parse(path)
+	cacheHash = hash
+	return cache
 }
 
-func ClearPACCache() {
-	pacCache = nil
-	pacFileHash = ""
+func ClearCache() {
+	cache = nil
+	cacheHash = ""
 }
 
-func parsePACFile(path string) *PACRules {
+func parse(path string) *Rules {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		logWarn("cannot read PAC file: %v", err)
 		return nil
 	}
 	content := string(data)
@@ -62,13 +61,10 @@ func parsePACFile(path string) *PACRules {
 	vm.Set("dnsResolve", func(host string) string { return "0.0.0.0" })
 	vm.Set("isInNet", func(ip, subnet, mask string) bool { return false })
 
-	_, err = vm.RunString(content)
-	if err != nil {
-		logError("PAC JS execution failed: %v", err)
+	if _, err := vm.RunString(content); err != nil {
 		return nil
 	}
 
-	// Get all domains to test from JS arrays
 	var testDomains []string
 	if arr := vm.Get("domains"); arr != nil {
 		if list, ok := arr.Export().([]interface{}); ok {
@@ -92,23 +88,18 @@ func parsePACFile(path string) *PACRules {
 		}
 	}
 
-	logInfo("PAC: testing %d domains via FindProxyForURL", len(testDomains))
-
 	findProxy, ok := goja.AssertFunction(vm.Get("FindProxyForURL"))
 	if !ok {
-		logError("FindProxyForURL not found in PAC")
 		return nil
 	}
 
-	rules := &PACRules{}
+	rules := &Rules{}
 	for _, domain := range testDomains {
 		r, err := findProxy(goja.Undefined(), vm.ToValue("https://"+domain+"/"), vm.ToValue(domain))
 		if err != nil {
 			continue
 		}
 		resultStr := r.String()
-		// PAC returns "DIRECT" for direct, or "SOCKS5 ...; DIRECT;" for proxy
-		// Check if result STARTS with DIRECT (pure direct) vs contains proxy info
 		if resultStr == "DIRECT" || strings.HasPrefix(resultStr, "DIRECT") {
 			rules.DirectDomains = append(rules.DirectDomains, "."+domain)
 		} else {
@@ -116,11 +107,7 @@ func parsePACFile(path string) *PACRules {
 		}
 	}
 
-	// Extract CIDR ranges
 	rules.DirectCIDRs = extractCIDRPairs(content)
-
-	logInfo("PAC result: %d proxy domains, %d direct domains, %d direct CIDRs",
-		len(rules.ProxyDomains), len(rules.DirectDomains), len(rules.DirectCIDRs))
 	return rules
 }
 

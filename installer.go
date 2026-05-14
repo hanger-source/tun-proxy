@@ -57,7 +57,6 @@ import (
 const (
 	helperInstallPath = "/usr/local/bin/tun-proxy-helper"
 	plistInstallPath  = "/Library/LaunchDaemons/com.hanger.tun-proxy.helper.plist"
-	helperSockPath    = "/var/run/tun-proxy.sock"
 )
 
 func isHelperInstalled() bool {

@@ -5,6 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"tun-proxy/internal/config"
+	"tun-proxy/internal/pac"
+
 	"github.com/getlantern/systray"
 )
 
@@ -26,7 +29,6 @@ var (
 )
 
 func setupNodeListeners(app *App, mStatus *systray.MenuItem) {
-	// Stop old goroutines
 	if nodeCancelCh != nil {
 		close(nodeCancelCh)
 	}
@@ -39,7 +41,7 @@ func setupNodeListeners(app *App, mStatus *systray.MenuItem) {
 				case <-cancel:
 					return
 				case <-menuItem.ClickedCh:
-					app.SelectedNode = idx
+					app.Cfg.SelectedNode = idx
 					for j, it := range nodeItems {
 						if j == idx {
 							it.Check()
@@ -48,15 +50,15 @@ func setupNodeListeners(app *App, mStatus *systray.MenuItem) {
 						}
 					}
 					app.SaveConfig()
-					if app.Connected {
+					if app.Engine.Connected {
 						mStatus.SetTitle("切换中...")
 						app.Disconnect()
 						err := app.Connect()
 						if err != nil {
 							mStatus.SetTitle("[ERR] " + err.Error())
 						} else {
-							mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
-							showAlert("已连接: " + app.Nodes[app.SelectedNode].Name)
+							mStatus.SetTitle("[ON] " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
+							showAlert("已连接: " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
 						}
 					}
 				}
@@ -66,19 +68,16 @@ func setupNodeListeners(app *App, mStatus *systray.MenuItem) {
 }
 
 func rebuildNodeMenu(app *App, mNodes *systray.MenuItem, mStatus *systray.MenuItem) {
-	// Hide old items
 	for _, item := range nodeItems {
 		item.Hide()
 	}
 	nodeItems = nil
 
-	// Create new items
-	for i, n := range app.Nodes {
-		item := mNodes.AddSubMenuItemCheckbox(n.Name, n.Server, i == app.SelectedNode)
+	for i, n := range app.Cfg.Nodes {
+		item := mNodes.AddSubMenuItemCheckbox(n.Name, n.Server, i == app.Cfg.SelectedNode)
 		nodeItems = append(nodeItems, item)
 	}
 
-	// Start listeners
 	setupNodeListeners(app, mStatus)
 }
 
@@ -88,7 +87,6 @@ func onReady() {
 	systray.SetTooltip("TUN Proxy")
 
 	app := NewApp()
-	app.LoadConfig()
 
 	if err := installHelperIfNeeded(); err != nil {
 		logError("helper install failed: %v", err)
@@ -104,8 +102,8 @@ func onReady() {
 	systray.AddSeparator()
 
 	mNodes := systray.AddMenuItem("节点", "选择代理节点")
-	for i, n := range app.Nodes {
-		item := mNodes.AddSubMenuItemCheckbox(n.Name, n.Server, i == app.SelectedNode)
+	for i, n := range app.Cfg.Nodes {
+		item := mNodes.AddSubMenuItemCheckbox(n.Name, n.Server, i == app.Cfg.SelectedNode)
 		nodeItems = append(nodeItems, item)
 	}
 	setupNodeListeners(app, mStatus)
@@ -124,16 +122,16 @@ func onReady() {
 	mQuit := systray.AddMenuItem("退出", "")
 
 	// Auto-connect on startup
-	if len(app.Nodes) > 0 {
+	if len(app.Cfg.Nodes) > 0 {
 		go func() {
 			mStatus.SetTitle("连接中...")
 			err := app.Connect()
 			if err != nil {
 				mStatus.SetTitle("[ERR] " + err.Error())
 			} else {
-				mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
+				mStatus.SetTitle("[ON] " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
 				systray.SetTemplateIcon(iconOn, iconOn)
-				showAlert("已连接: " + app.Nodes[app.SelectedNode].Name)
+				showAlert("已连接: " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
 				mConnect.Hide()
 				mDisconnect.Show()
 			}
@@ -144,7 +142,7 @@ func onReady() {
 		for {
 			select {
 			case <-mConnect.ClickedCh:
-				if len(app.Nodes) == 0 {
+				if len(app.Cfg.Nodes) == 0 {
 					mStatus.SetTitle("[ERR] 无节点，请先设置订阅")
 					continue
 				}
@@ -154,8 +152,8 @@ func onReady() {
 					mStatus.SetTitle("[ERR] " + err.Error())
 					continue
 				}
-				mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
-				showAlert("已连接: " + app.Nodes[app.SelectedNode].Name)
+				mStatus.SetTitle("[ON] " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
+				showAlert("已连接: " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
 				systray.SetTemplateIcon(iconOn, iconOn)
 				mConnect.Hide()
 				mDisconnect.Show()
@@ -170,31 +168,30 @@ func onReady() {
 			case <-mSubscribe.ClickedCh:
 				mStatus.SetTitle("更新订阅中...")
 				prevName := ""
-				if app.SelectedNode < len(app.Nodes) {
-					prevName = app.Nodes[app.SelectedNode].Name
+				if app.Cfg.SelectedNode < len(app.Cfg.Nodes) {
+					prevName = app.Cfg.Nodes[app.Cfg.SelectedNode].Name
 				}
 				err := app.UpdateSubscription()
 				if err != nil {
 					mStatus.SetTitle("[ERR] " + err.Error())
 					continue
 				}
-				// Try to keep previous selection
 				if prevName != "" {
-					for i, n := range app.Nodes {
+					for i, n := range app.Cfg.Nodes {
 						if n.Name == prevName {
-							app.SelectedNode = i
+							app.Cfg.SelectedNode = i
 							break
 						}
 					}
 				}
 				app.SaveConfig()
 				rebuildNodeMenu(app, mNodes, mStatus)
-				mStatus.SetTitle(fmt.Sprintf("已更新 %d 个节点", len(app.Nodes)))
+				mStatus.SetTitle(fmt.Sprintf("已更新 %d 个节点", len(app.Cfg.Nodes)))
 
 			case <-mSetURL.ClickedCh:
-				url := promptInput("输入订阅链接（完整 URL）", app.SubscribeURL)
+				url := promptInput("输入订阅链接（完整 URL）", app.Cfg.SubscribeURL)
 				if url != "" {
-					app.SubscribeURL = url
+					app.Cfg.SubscribeURL = url
 					app.SaveConfig()
 					mStatus.SetTitle("订阅链接已保存，请点击「更新订阅」")
 					showAlert("订阅链接已保存")
@@ -203,22 +200,27 @@ func onReady() {
 			case <-mSetPAC.ClickedCh:
 				path := promptFileChooser("选择 PAC 文件")
 				if path != "" {
-					destPath := filepath.Join(app.ConfigDir(), "pac.js")
+					destPath := filepath.Join(config.Dir(), "pac.js")
 					data, err := os.ReadFile(path)
 					if err == nil {
-						os.WriteFile(destPath, data, 0644)
-						app.PACPath = destPath
+						if wErr := os.WriteFile(destPath, data, 0644); wErr != nil {
+							logError("write PAC failed: %v", wErr)
+						}
+						app.Cfg.PACPath = destPath
 					} else {
-						app.PACPath = path
+						app.Cfg.PACPath = path
 					}
-					ClearPACCache()
+					pac.ClearCache()
 					app.SaveConfig()
 					mStatus.SetTitle("PAC 已设置")
 					showAlert("PAC 文件已设置")
-					if app.Connected {
+					if app.Engine.Connected {
 						app.Disconnect()
-						app.Connect()
-						mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
+						if err := app.Connect(); err != nil {
+							mStatus.SetTitle("[ERR] " + err.Error())
+						} else {
+							mStatus.SetTitle("[ON] " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
+						}
 					}
 				}
 
