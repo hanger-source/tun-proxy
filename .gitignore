@@ -1,4 +1,3 @@
 build/
 tun-proxy
-*.png
 .DS_Store

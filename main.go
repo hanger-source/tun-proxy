@@ -14,7 +14,8 @@ func main() {
 }
 
 func onReady() {
-	systray.SetTitle("TP")
+	systray.SetIcon(iconOff)
+	systray.SetTitle("")
 	systray.SetTooltip("TUN Proxy")
 
 	app := NewApp()
@@ -62,19 +63,19 @@ func onReady() {
 					continue
 				}
 				mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
-				systray.SetTitle("TP")
+				systray.SetIcon(iconOn)
 				mConnect.Hide()
 				mDisconnect.Show()
 
 			case <-mDisconnect.ClickedCh:
 				app.Disconnect()
 				mStatus.SetTitle("[OFF] 已断开")
-				systray.SetTitle("TP")
+				systray.SetIcon(iconOff)
 				mDisconnect.Hide()
 				mConnect.Show()
 
 			case <-mSubscribe.ClickedCh:
-				mStatus.SetTitle("⏳ 更新订阅中...")
+				mStatus.SetTitle("更新订阅中...")
 				err := app.UpdateSubscription()
 				if err != nil {
 					mStatus.SetTitle("[ERR] " + err.Error())
