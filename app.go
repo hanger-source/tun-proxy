@@ -7,11 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 type App struct {
 	SubscribeURL string `json:"subscribe_url"`
+	PACPath      string `json:"pac_path"`
 	Nodes        []Node `json:"nodes"`
 	SelectedNode int    `json:"selected_node"`
 	Connected    bool   `json:"-"`
@@ -106,8 +108,14 @@ func (a *App) Connect() error {
 	excludeIPs := resolveServerIPs(a.Nodes)
 	logInfo("resolved exclude IPs: %v", excludeIPs)
 
+	// Parse PAC whitelist if configured
+	var pacRules *PACRules
+	if a.PACPath != "" {
+		pacRules = ParsePACFile(a.PACPath)
+	}
+
 	// Generate sing-box config
-	config := GenerateSingBoxConfig(a.Nodes, a.SelectedNode, excludeIPs)
+	config := GenerateSingBoxConfig(a.Nodes, a.SelectedNode, excludeIPs, pacRules)
 	configData, _ := json.MarshalIndent(config, "", "  ")
 	os.WriteFile(a.SingBoxConfigPath(), configData, 0644)
 	logInfo("sing-box config written to %s", a.SingBoxConfigPath())
@@ -178,4 +186,31 @@ func resolveServerIPs(nodes []Node) []string {
 		}
 	}
 	return ips
+}
+
+func (a *App) TestRoute(domain string) string {
+	// Check PAC first
+	if a.PACPath != "" {
+		rules := ParsePACFile(a.PACPath)
+		if rules != nil {
+			for _, d := range rules.ProxyDomains {
+				if domain == d || strings.HasSuffix(domain, "."+d) {
+					return fmt.Sprintf("🔵 %s → 代理 (PAC 黑名单)", domain)
+				}
+			}
+			for _, d := range rules.DirectDomains {
+				suffix := d // already has leading dot
+				if strings.HasSuffix(domain, suffix) || "."+domain == suffix {
+					return fmt.Sprintf("⚪ %s → 直连 (PAC 白名单)", domain)
+				}
+			}
+		}
+	}
+
+	// Check built-in rules
+	if strings.HasSuffix(domain, ".cn") {
+		return fmt.Sprintf("⚪ %s → 直连 (.cn)", domain)
+	}
+
+	return fmt.Sprintf("🔵 %s → 代理 (默认规则)", domain)
 }

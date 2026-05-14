@@ -40,6 +40,9 @@ func onReady() {
 	systray.AddSeparator()
 	mSubscribe := systray.AddMenuItem("更新订阅", "拉取最新节点")
 	mSetURL := systray.AddMenuItem("设置订阅链接...", "")
+	mSetPAC := systray.AddMenuItem("设置 PAC 文件路径...", "白名单域名直连")
+	mTestRoute := systray.AddMenuItem("测试域名路由...", "输入域名查看走代理还是直连")
+	mAutoStart := systray.AddMenuItemCheckbox("开机启动", "", isAutoStartEnabled())
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "")
 
@@ -96,6 +99,40 @@ func onReady() {
 					app.SaveConfig()
 					mStatus.SetTitle("✅ 订阅链接已保存，请点击「更新订阅」")
 					showAlert("订阅链接已保存")
+				}
+
+			case <-mSetPAC.ClickedCh:
+				path := promptInput("输入 PAC 文件路径（留空则不使用）", app.PACPath)
+				app.PACPath = path
+				app.SaveConfig()
+				if path != "" {
+					mStatus.SetTitle("✅ PAC 路径已设置")
+					showAlert("PAC 路径已保存: " + path)
+				} else {
+					mStatus.SetTitle("✅ PAC 已清除，使用默认规则")
+				}
+
+			case <-mTestRoute.ClickedCh:
+				domain := promptInput("输入域名测试路由（如 google.com）", "")
+				if domain != "" {
+					result := app.TestRoute(domain)
+					showAlert(result)
+					mStatus.SetTitle(result)
+				}
+
+			case <-mAutoStart.ClickedCh:
+				if mAutoStart.Checked() {
+					disableAutoStart()
+					mAutoStart.Uncheck()
+					showAlert("已关闭开机启动")
+				} else {
+					err := enableAutoStart()
+					if err != nil {
+						showAlert("设置失败: " + err.Error())
+					} else {
+						mAutoStart.Check()
+						showAlert("已开启开机启动")
+					}
 				}
 
 			case <-mQuit.ClickedCh:

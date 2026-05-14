@@ -1,6 +1,6 @@
 package main
 
-func GenerateSingBoxConfig(nodes []Node, selected int, excludeIPs []string) map[string]interface{} {
+func GenerateSingBoxConfig(nodes []Node, selected int, excludeIPs []string, pacRules *PACRules) map[string]interface{} {
 	// Build outbounds
 	var outboundNames []string
 	var outbounds []map[string]interface{}
@@ -93,10 +93,33 @@ func GenerateSingBoxConfig(nodes []Node, selected int, excludeIPs []string) map[
 		"outbounds": allOutbounds,
 		"route": map[string]interface{}{
 			"auto_detect_interface": true,
-			"rules": []map[string]interface{}{
-				{"ip_is_private": true, "outbound": "direct"},
-				{"domain_suffix": ".cn", "outbound": "direct"},
-			},
+			"rules": func() []map[string]interface{} {
+				rules := []map[string]interface{}{
+					{"ip_is_private": true, "outbound": "direct"},
+					{"domain_suffix": ".cn", "outbound": "direct"},
+				}
+				if pacRules != nil {
+					if len(pacRules.ProxyDomains) > 0 {
+						rules = append(rules, map[string]interface{}{
+							"domain": pacRules.ProxyDomains,
+							"outbound": "proxy",
+						})
+					}
+					if len(pacRules.DirectDomains) > 0 {
+						rules = append(rules, map[string]interface{}{
+							"domain_suffix": pacRules.DirectDomains,
+							"outbound":      "direct",
+						})
+					}
+					if len(pacRules.DirectCIDRs) > 0 {
+						rules = append(rules, map[string]interface{}{
+							"ip_cidr":  pacRules.DirectCIDRs,
+							"outbound": "direct",
+						})
+					}
+				}
+				return rules
+			}(),
 			"final": "proxy",
 		},
 	}
