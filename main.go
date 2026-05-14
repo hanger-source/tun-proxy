@@ -122,6 +122,32 @@ func onReady() {
 					item := mNodes.AddSubMenuItemCheckbox(n.Name, n.Server, i == 0)
 					nodeItems = append(nodeItems, item)
 				}
+				// Start click listeners for new items
+				for i, item := range nodeItems {
+					go func(idx int, menuItem *systray.MenuItem) {
+						for range menuItem.ClickedCh {
+							app.SelectedNode = idx
+							for j, it := range nodeItems {
+								if j == idx {
+									it.Check()
+								} else {
+									it.Uncheck()
+								}
+							}
+							app.SaveConfig()
+							if app.Connected {
+								mStatus.SetTitle("切换中...")
+								app.Disconnect()
+								err := app.Connect()
+								if err != nil {
+									mStatus.SetTitle("[ERR] " + err.Error())
+								} else {
+									mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
+								}
+							}
+						}
+					}(i, item)
+				}
 				app.SelectedNode = 0
 				app.SaveConfig()
 				mStatus.SetTitle(fmt.Sprintf("已更新 %d 个节点", len(app.Nodes)))
