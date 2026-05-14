@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"regexp"
@@ -10,14 +12,33 @@ import (
 )
 
 type PACRules struct {
-	ProxyDomains  []string // 走代理
-	DirectDomains []string // 直连
-	DirectCIDRs   []string // 直连 IP 段
+	ProxyDomains  []string
+	DirectDomains []string
+	DirectCIDRs   []string
 }
 
-// ParsePACFile executes PAC JS with goja, extracts all declared domains,
-// runs each through FindProxyForURL to classify as proxy or direct.
-func ParsePACFile(path string) *PACRules {
+var pacCache *PACRules
+var pacFileHash string
+
+func GetPACRules(path string) *PACRules {
+	if path == "" {
+		return nil
+	}
+	hash := fileHash(path)
+	if hash == pacFileHash && pacCache != nil {
+		return pacCache
+	}
+	pacCache = parsePACFile(path)
+	pacFileHash = hash
+	return pacCache
+}
+
+func ClearPACCache() {
+	pacCache = nil
+	pacFileHash = ""
+}
+
+func parsePACFile(path string) *PACRules {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		logWarn("cannot read PAC file: %v", err)
@@ -25,46 +46,49 @@ func ParsePACFile(path string) *PACRules {
 	}
 	content := string(data)
 
-	// Create JS runtime
-	vm := goja.New()
+	// Extract only the declared domain arrays (not all strings in the file)
+	declaredDomains := extractJSArray(content, "var domains")
+	declaredHosts := extractJSArray(content, "var hostArr")
 
-	// Provide PAC helper functions
-	vm.Set("isPlainHostName", func(host string) bool {
-		return !strings.Contains(host, ".")
-	})
+	// Build test list: only declared domains (typically < 200)
+	var testDomains []string
+	for _, d := range declaredDomains {
+		if isValidDomain(d) {
+			testDomains = append(testDomains, d)
+		}
+	}
+	for _, d := range declaredHosts {
+		clean := strings.TrimPrefix(d, "*.")
+		if isValidDomain(clean) {
+			testDomains = append(testDomains, clean)
+		}
+	}
+
+	logInfo("PAC: testing %d declared domains via FindProxyForURL", len(testDomains))
+
+	// Execute PAC with goja
+	vm := goja.New()
+	vm.Set("isPlainHostName", func(host string) bool { return !strings.Contains(host, ".") })
 	vm.Set("dnsDomainIs", func(host, domain string) bool {
 		return host == domain || strings.HasSuffix(host, "."+domain)
 	})
 	vm.Set("shExpMatch", func(str, pattern string) bool {
-		// Convert shell pattern to regex
 		re := "^" + regexp.QuoteMeta(pattern) + "$"
 		re = strings.ReplaceAll(re, `\*`, `.*`)
 		re = strings.ReplaceAll(re, `\?`, `.`)
 		matched, _ := regexp.MatchString(re, str)
 		return matched
 	})
-	vm.Set("isResolvable", func(host string) bool {
-		return false // Skip DNS resolution during parsing
-	})
-	vm.Set("dnsResolve", func(host string) string {
-		return "0.0.0.0"
-	})
-	vm.Set("isInNet", func(ip, subnet, mask string) bool {
-		return false
-	})
+	vm.Set("isResolvable", func(host string) bool { return false })
+	vm.Set("dnsResolve", func(host string) string { return "0.0.0.0" })
+	vm.Set("isInNet", func(ip, subnet, mask string) bool { return false })
 
-	// Execute PAC script
 	_, err = vm.RunString(content)
 	if err != nil {
 		logError("PAC JS execution failed: %v", err)
 		return nil
 	}
 
-	// Extract all domains declared in the PAC file
-	allDomains := extractAllDomains(content)
-	logInfo("extracted %d domains from PAC file to test", len(allDomains))
-
-	// Run each domain through FindProxyForURL
 	findProxy, ok := goja.AssertFunction(vm.Get("FindProxyForURL"))
 	if !ok {
 		logError("FindProxyForURL not found in PAC")
@@ -72,7 +96,7 @@ func ParsePACFile(path string) *PACRules {
 	}
 
 	rules := &PACRules{}
-	for _, domain := range allDomains {
+	for _, domain := range testDomains {
 		url := "https://" + domain + "/"
 		result, err := findProxy(goja.Undefined(), vm.ToValue(url), vm.ToValue(domain))
 		if err != nil {
@@ -86,44 +110,41 @@ func ParsePACFile(path string) *PACRules {
 		}
 	}
 
-	// Also extract CIDR ranges directly (since we skip DNS in PAC execution)
-	rules.DirectCIDRs = extractCIDRsFromJS(content)
+	// Extract CIDR ranges
+	rules.DirectCIDRs = extractCIDRPairs(content)
 
 	logInfo("PAC result: %d proxy domains, %d direct domains, %d direct CIDRs",
 		len(rules.ProxyDomains), len(rules.DirectDomains), len(rules.DirectCIDRs))
-
 	return rules
 }
 
-// extractAllDomains pulls all quoted domain-like strings from the PAC file
-func extractAllDomains(content string) []string {
-	re := regexp.MustCompile(`"(\*\.)?([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9][-a-zA-Z0-9]*)+)"`)
-	matches := re.FindAllStringSubmatch(content, -1)
-
-	seen := map[string]bool{}
-	var domains []string
-	for _, m := range matches {
-		domain := m[2]
-		if strings.Contains(domain, "*") {
-			continue
-		}
-		// Skip IP-like patterns
-		if regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`).MatchString(domain) {
-			continue
-		}
-		if !seen[domain] {
-			seen[domain] = true
-			domains = append(domains, domain)
-		}
+func extractJSArray(content, varDecl string) []string {
+	idx := strings.Index(content, varDecl)
+	if idx < 0 {
+		return nil
 	}
-	return domains
+	start := strings.Index(content[idx:], "[")
+	if start < 0 {
+		return nil
+	}
+	start += idx
+	end := strings.Index(content[start:], "];")
+	if end < 0 {
+		return nil
+	}
+	block := content[start : start+end+1]
+	re := regexp.MustCompile(`"([^"]+)"`)
+	matches := re.FindAllStringSubmatch(block, -1)
+	var result []string
+	for _, m := range matches {
+		result = append(result, m[1])
+	}
+	return result
 }
 
-// extractCIDRsFromJS extracts CIDR entries from cidrArr in the PAC
-func extractCIDRsFromJS(content string) []string {
+func extractCIDRPairs(content string) []string {
 	re := regexp.MustCompile(`\["(\d+\.\d+\.\d+\.\d+)",\s*"(\d+\.\d+\.\d+\.\d+)"\]`)
 	matches := re.FindAllStringSubmatch(content, -1)
-
 	var cidrs []string
 	for _, m := range matches {
 		bits := maskBits(m[2])
@@ -154,4 +175,23 @@ func maskBits(mask string) int {
 		}
 	}
 	return bits
+}
+
+func isValidDomain(s string) bool {
+	if strings.Contains(s, "*") || strings.Contains(s, " ") {
+		return false
+	}
+	if regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`).MatchString(s) {
+		return false
+	}
+	return strings.Contains(s, ".")
+}
+
+func fileHash(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	h := md5.Sum(data)
+	return hex.EncodeToString(h[:])
 }

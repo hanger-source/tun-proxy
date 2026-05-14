@@ -3,9 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -151,7 +149,7 @@ func (a *App) startSingBox(nodeIdx int) error {
 
 	var pacRules *PACRules
 	if a.PACPath != "" {
-		pacRules = ParsePACFile(a.PACPath)
+		pacRules = GetPACRules(a.PACPath)
 	}
 
 	config := GenerateSingBoxConfig(a.Nodes, nodeIdx, excludeIPs, pacRules)
@@ -177,7 +175,7 @@ func (a *App) startSingBox(nodeIdx int) error {
 		}
 	}
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(1 * time.Second)
 	if a.cmd.ProcessState != nil && a.cmd.ProcessState.Exited() {
 		return fmt.Errorf("sing-box exited immediately")
 	}
@@ -185,19 +183,15 @@ func (a *App) startSingBox(nodeIdx int) error {
 }
 
 func (a *App) verifyConnection() bool {
-	// Test actual connectivity through the proxy
-	client := &http.Client{Timeout: 8 * time.Second}
-	resp, err := client.Get("https://ipinfo.io/ip")
+	// Quick TCP connectivity test through TUN
+	conn, err := net.DialTimeout("tcp", "8.8.8.8:443", 3*time.Second)
 	if err != nil {
 		logWarn("connectivity check failed: %v", err)
 		return false
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	ip := strings.TrimSpace(string(body))
-	logInfo("connectivity check: exit IP = %s", ip)
-	// Verify it's not our local IP (basic check)
-	return resp.StatusCode == 200 && len(ip) > 0
+	conn.Close()
+	logInfo("connectivity check passed")
+	return true
 }
 
 func (a *App) killSingBox() {
@@ -250,9 +244,8 @@ func resolveServerIPs(nodes []Node) []string {
 }
 
 func (a *App) TestRoute(domain string) string {
-	// Check PAC first
 	if a.PACPath != "" {
-		rules := ParsePACFile(a.PACPath)
+		rules := GetPACRules(a.PACPath)
 		if rules != nil {
 			for _, d := range rules.ProxyDomains {
 				if domain == d || strings.HasSuffix(domain, "."+d) {

@@ -106,6 +106,7 @@ func onReady() {
 				path := promptFileChooser("选择 PAC 文件")
 				if path != "" {
 					app.PACPath = path
+					ClearPACCache()
 					app.SaveConfig()
 					mStatus.SetTitle("✅ PAC: " + path)
 					showAlert("PAC 文件已设置")
