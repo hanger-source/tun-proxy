@@ -10,6 +10,11 @@ import (
 func main() {
 	initLogger()
 	logInfo("tun-proxy starting")
+	defer func() {
+		if r := recover(); r != nil {
+			logError("PANIC: %v", r)
+		}
+	}()
 	systray.Run(onReady, onExit)
 }
 

@@ -17,7 +17,6 @@ type App struct {
 	Nodes        []Node `json:"nodes"`
 	SelectedNode int    `json:"selected_node"`
 	Connected    bool   `json:"-"`
-	cmd          *exec.Cmd
 }
 
 func NewApp() *App {
@@ -108,37 +107,29 @@ func (a *App) Connect() error {
 		return fmt.Errorf("无可用节点")
 	}
 
-	// Try selected node first, then failover to others
-	order := []int{a.SelectedNode}
-	for i := range a.Nodes {
-		if i != a.SelectedNode {
-			order = append(order, i)
-		}
+	// Kill any existing sing-box first (no password needed for this)
+	a.killSingBox()
+
+	// Try selected node
+	node := a.Nodes[a.SelectedNode]
+	logInfo("connecting via node: %s (%s:%d)", node.Name, node.Server, node.Port)
+
+	err := a.startSingBox(a.SelectedNode)
+	if err != nil {
+		logError("start failed: %v", err)
+		return err
 	}
 
-	for _, idx := range order {
-		node := a.Nodes[idx]
-		logInfo("trying node [%d]: %s (%s:%d)", idx, node.Name, node.Server, node.Port)
-
-		err := a.startSingBox(idx)
-		if err != nil {
-			logError("start failed for node %s: %v", node.Name, err)
-			continue
-		}
-
-		// Verify connectivity
-		if a.verifyConnection() {
-			a.SelectedNode = idx
-			a.Connected = true
-			logInfo("connected successfully via %s", node.Name)
-			return nil
-		}
-
-		logWarn("node %s started but connectivity check failed, trying next", node.Name)
+	// Verify connectivity
+	if !a.verifyConnection() {
+		logWarn("connectivity check failed")
 		a.killSingBox()
+		return fmt.Errorf("连接失败: 无法验证连通性")
 	}
 
-	return fmt.Errorf("所有节点连接失败")
+	a.Connected = true
+	logInfo("connected successfully via %s", node.Name)
+	return nil
 }
 
 func (a *App) startSingBox(nodeIdx int) error {
@@ -160,28 +151,30 @@ func (a *App) startSingBox(nodeIdx int) error {
 	binary := a.SingBoxBinary()
 	logInfo("sing-box binary: %s", binary)
 
-	a.cmd = exec.Command("sudo", "-n", binary, "run", "-c", a.SingBoxConfigPath())
-	a.cmd.Stdout = logFile
-	a.cmd.Stderr = logFile
+	// Install helper if needed (first time only, shows system auth dialog)
+	if err := installHelperIfNeeded(); err != nil {
+		logError("helper install failed: %v", err)
+		return fmt.Errorf("安装 helper 失败: %v", err)
+	}
 
-	err := a.cmd.Start()
+	// Send start command to helper daemon
+	resp, err := sendHelperCommand(HelperRequest{
+		Action:     "start",
+		BinaryPath: binary,
+		ConfigPath: a.SingBoxConfigPath(),
+		LogPath:    a.SingBoxLogPath(),
+	})
 	if err != nil {
-		logWarn("sudo -n failed, trying osascript: %v", err)
-		script := fmt.Sprintf(`do shell script "%s run -c %s > %s 2>&1 &" with administrator privileges`,
-			binary, a.SingBoxConfigPath(), a.SingBoxLogPath())
-		cmd := exec.Command("osascript", "-e", script)
-		out, err2 := cmd.CombinedOutput()
-		if err2 != nil {
-			logError("osascript failed: %v, output: %s", err2, string(out))
-			return fmt.Errorf("启动失败: %v", err2)
-		}
-		logInfo("sing-box started via osascript (admin privileges)")
+		logError("helper command failed: %v", err)
+		return fmt.Errorf("helper 通信失败: %v", err)
+	}
+	if !resp.OK {
+		logError("helper start failed: %s", resp.Message)
+		return fmt.Errorf("启动失败: %s", resp.Message)
 	}
 
+	logInfo("sing-box started via helper")
 	time.Sleep(1 * time.Second)
-	if a.cmd.ProcessState != nil && a.cmd.ProcessState.Exited() {
-		return fmt.Errorf("sing-box exited immediately")
-	}
 	return nil
 }
 
@@ -198,13 +191,15 @@ func (a *App) verifyConnection() bool {
 }
 
 func (a *App) killSingBox() {
-	if a.cmd != nil && a.cmd.Process != nil {
-		exec.Command("sudo", "-n", "kill", fmt.Sprintf("%d", a.cmd.Process.Pid)).Run()
-		a.cmd.Process.Kill()
-		a.cmd.Wait()
-		a.cmd = nil
+	resp, err := sendHelperCommand(HelperRequest{Action: "stop"})
+	if err != nil {
+		logWarn("helper stop failed: %v, trying pkill", err)
+		exec.Command("pkill", "-f", "sing-box run").Run()
+		return
 	}
-	exec.Command("sudo", "-n", "pkill", "-f", "sing-box run").Run()
+	if !resp.OK {
+		logWarn("helper stop: %s", resp.Message)
+	}
 }
 
 func (a *App) Disconnect() {
@@ -215,7 +210,7 @@ func (a *App) Disconnect() {
 }
 
 func (a *App) SingBoxLogPath() string {
-	return filepath.Join(a.ConfigDir(), "tun-proxy.log")
+	return filepath.Join(a.ConfigDir(), "singbox.log")
 }
 
 func (a *App) OpenLog() {

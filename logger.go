@@ -16,6 +16,14 @@ func initLogger() {
 	dir := filepath.Join(home, ".tun-proxy")
 	os.MkdirAll(dir, 0755)
 	logPath := filepath.Join(dir, "tun-proxy.log")
+
+	// If file exists but not writable, remove and recreate
+	if f, err := os.OpenFile(logPath, os.O_WRONLY|os.O_APPEND, 0644); err != nil {
+		os.Remove(logPath)
+	} else {
+		f.Close()
+	}
+
 	var err error
 	logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
