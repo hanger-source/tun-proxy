@@ -104,7 +104,7 @@ func GenerateConfig(nodes []config.Node, selected int, excludeIPs []string, rule
 	}
 
 	return map[string]interface{}{
-		"log": map[string]interface{}{"level": "warn", "timestamp": true},
+		"log": map[string]interface{}{"level": "info", "timestamp": true},
 		"dns": map[string]interface{}{
 			"servers": []map[string]interface{}{
 				{"tag": "dns-remote", "address": "tcp://8.8.8.8", "detour": "proxy"},
