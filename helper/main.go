@@ -7,10 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
 const sockPath = "/var/run/tun-proxy.sock"
+const allowedBinary = "/Users" // Must be under /Users or ~/.tun-proxy
 
 type Request struct {
 	Action     string `json:"action"` // start, stop, status
@@ -37,8 +39,10 @@ func main() {
 	}
 	defer listener.Close()
 
-	// Allow non-root users to connect
-	os.Chmod(sockPath, 0666)
+	// Restrict socket access - only root and staff group
+	os.Chmod(sockPath, 0660)
+	// Set group to staff so the app user can connect
+	exec.Command("chgrp", "staff", sockPath).Run()
 
 	fmt.Println("tun-proxy-helper started, listening on", sockPath)
 
@@ -74,6 +78,11 @@ func handleConn(conn net.Conn) {
 	case "start":
 		if req.BinaryPath == "" || req.ConfigPath == "" {
 			sendResponse(conn, false, "missing binary_path or config_path")
+			return
+		}
+		// Security: only allow sing-box binary from trusted paths
+		if !isAllowedBinary(req.BinaryPath) {
+			sendResponse(conn, false, "binary path not allowed")
 			return
 		}
 		stopSingBox()
@@ -147,4 +156,18 @@ func stopSingBox() {
 
 func sendResponse(conn net.Conn, ok bool, msg string) {
 	json.NewEncoder(conn).Encode(Response{OK: ok, Message: msg})
+}
+
+func isAllowedBinary(path string) bool {
+	// Only allow sing-box from known safe locations
+	allowed := []string{
+		"/.tun-proxy/sing-box",
+		"/usr/local/bin/sing-box",
+	}
+	for _, suffix := range allowed {
+		if strings.HasSuffix(path, suffix) {
+			return true
+		}
+	}
+	return false
 }
