@@ -1,5 +1,7 @@
 package main
 
+import "net"
+
 func GenerateSingBoxConfig(nodes []Node, selected int, excludeIPs []string, pacRules *PACRules) map[string]interface{} {
 	// Build outbounds
 	var outboundNames []string
@@ -12,10 +14,20 @@ func GenerateSingBoxConfig(nodes []Node, selected int, excludeIPs []string, pacR
 		}
 		outboundNames = append(outboundNames, tag)
 
+		// Resolve server domain to IP to avoid DNS loopback
+		server := n.Server
+		if net.ParseIP(server) == nil {
+			// It's a domain, resolve it
+			addrs, err := net.LookupHost(server)
+			if err == nil && len(addrs) > 0 {
+				server = addrs[0]
+			}
+		}
+
 		ob := map[string]interface{}{
 			"tag":         tag,
 			"type":        n.Type,
-			"server":      n.Server,
+			"server":      server,
 			"server_port": n.Port,
 		}
 		if n.Type == "vmess" {

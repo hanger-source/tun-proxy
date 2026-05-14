@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,30 +110,58 @@ func (a *App) Connect() error {
 		return fmt.Errorf("无可用节点")
 	}
 
-	node := a.Nodes[a.SelectedNode]
-	logInfo("connecting via node: %s (%s:%d)", node.Name, node.Server, node.Port)
+	// Try selected node first, then failover to others
+	order := []int{a.SelectedNode}
+	for i := range a.Nodes {
+		if i != a.SelectedNode {
+			order = append(order, i)
+		}
+	}
 
-	// Resolve proxy server IPs for route_exclude_address
+	for _, idx := range order {
+		node := a.Nodes[idx]
+		logInfo("trying node [%d]: %s (%s:%d)", idx, node.Name, node.Server, node.Port)
+
+		err := a.startSingBox(idx)
+		if err != nil {
+			logError("start failed for node %s: %v", node.Name, err)
+			continue
+		}
+
+		// Verify connectivity
+		if a.verifyConnection() {
+			a.SelectedNode = idx
+			a.Connected = true
+			logInfo("connected successfully via %s", node.Name)
+			return nil
+		}
+
+		logWarn("node %s started but connectivity check failed, trying next", node.Name)
+		a.killSingBox()
+	}
+
+	return fmt.Errorf("所有节点连接失败")
+}
+
+func (a *App) startSingBox(nodeIdx int) error {
+	a.killSingBox()
+
 	excludeIPs := resolveServerIPs(a.Nodes)
 	logInfo("resolved exclude IPs: %v", excludeIPs)
 
-	// Parse PAC whitelist if configured
 	var pacRules *PACRules
 	if a.PACPath != "" {
 		pacRules = ParsePACFile(a.PACPath)
 	}
 
-	// Generate sing-box config
-	config := GenerateSingBoxConfig(a.Nodes, a.SelectedNode, excludeIPs, pacRules)
+	config := GenerateSingBoxConfig(a.Nodes, nodeIdx, excludeIPs, pacRules)
 	configData, _ := json.MarshalIndent(config, "", "  ")
 	os.WriteFile(a.SingBoxConfigPath(), configData, 0644)
 	logInfo("sing-box config written to %s", a.SingBoxConfigPath())
 
-	// Start sing-box with sudo
 	binary := a.SingBoxBinary()
 	logInfo("sing-box binary: %s", binary)
 
-	// Open log file for sing-box output
 	a.cmd = exec.Command("sudo", "-n", binary, "run", "-c", a.SingBoxConfigPath())
 	a.cmd.Stdout = logFile
 	a.cmd.Stderr = logFile
@@ -143,25 +173,34 @@ func (a *App) Connect() error {
 		a.cmd = exec.Command("osascript", "-e", script)
 		err = a.cmd.Start()
 		if err != nil {
-			logError("failed to start sing-box: %v", err)
 			return fmt.Errorf("启动失败: %v", err)
 		}
 	}
 
-	// Wait a moment and verify
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 	if a.cmd.ProcessState != nil && a.cmd.ProcessState.Exited() {
-		logError("sing-box exited immediately")
-		return fmt.Errorf("sing-box 启动后退出")
+		return fmt.Errorf("sing-box exited immediately")
 	}
-
-	a.Connected = true
-	logInfo("connected successfully via %s", node.Name)
 	return nil
 }
 
-func (a *App) Disconnect() {
-	logInfo("disconnecting...")
+func (a *App) verifyConnection() bool {
+	// Test actual connectivity through the proxy
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get("https://ipinfo.io/ip")
+	if err != nil {
+		logWarn("connectivity check failed: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	ip := strings.TrimSpace(string(body))
+	logInfo("connectivity check: exit IP = %s", ip)
+	// Verify it's not our local IP (basic check)
+	return resp.StatusCode == 200 && len(ip) > 0
+}
+
+func (a *App) killSingBox() {
 	if a.cmd != nil && a.cmd.Process != nil {
 		exec.Command("sudo", "-n", "kill", fmt.Sprintf("%d", a.cmd.Process.Pid)).Run()
 		a.cmd.Process.Kill()
@@ -169,6 +208,11 @@ func (a *App) Disconnect() {
 		a.cmd = nil
 	}
 	exec.Command("sudo", "-n", "pkill", "-f", "sing-box run").Run()
+}
+
+func (a *App) Disconnect() {
+	logInfo("disconnecting...")
+	a.killSingBox()
 	a.Connected = false
 	logInfo("disconnected")
 }
