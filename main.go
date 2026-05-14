@@ -57,6 +57,9 @@ func onReady() {
 	mAutoStart := systray.AddMenuItemCheckbox("开机启动", "", isAutoStartEnabled())
 	mViewLog := systray.AddMenuItem("查看路由日志", "打开控制台查看连接记录")
 	systray.AddSeparator()
+	mVersion := systray.AddMenuItem("TunProxy v" + Version, "")
+	mVersion.Disable()
+	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "")
 
 	go func() {
