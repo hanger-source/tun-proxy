@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/getlantern/systray"
 )
@@ -117,7 +118,15 @@ func onReady() {
 			case <-mSetPAC.ClickedCh:
 				path := promptFileChooser("选择 PAC 文件")
 				if path != "" {
-					app.PACPath = path
+					// Copy PAC to app config dir to avoid repeated permission prompts
+					destPath := filepath.Join(app.ConfigDir(), "pac.js")
+					data, err := os.ReadFile(path)
+					if err == nil {
+						os.WriteFile(destPath, data, 0644)
+						app.PACPath = destPath
+					} else {
+						app.PACPath = path
+					}
 					ClearPACCache()
 					app.SaveConfig()
 					mStatus.SetTitle("PAC: " + path)
