@@ -167,12 +167,15 @@ func (a *App) startSingBox(nodeIdx int) error {
 	err := a.cmd.Start()
 	if err != nil {
 		logWarn("sudo -n failed, trying osascript: %v", err)
-		script := fmt.Sprintf(`do shell script "%s run -c %s" with administrator privileges`, binary, a.SingBoxConfigPath())
-		a.cmd = exec.Command("osascript", "-e", script)
-		err = a.cmd.Start()
-		if err != nil {
-			return fmt.Errorf("启动失败: %v", err)
+		script := fmt.Sprintf(`do shell script "%s run -c %s > %s 2>&1 &" with administrator privileges`,
+			binary, a.SingBoxConfigPath(), a.SingBoxLogPath())
+		cmd := exec.Command("osascript", "-e", script)
+		out, err2 := cmd.CombinedOutput()
+		if err2 != nil {
+			logError("osascript failed: %v, output: %s", err2, string(out))
+			return fmt.Errorf("启动失败: %v", err2)
 		}
+		logInfo("sing-box started via osascript (admin privileges)")
 	}
 
 	time.Sleep(1 * time.Second)

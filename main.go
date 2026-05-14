@@ -14,7 +14,7 @@ func main() {
 }
 
 func onReady() {
-	systray.SetIcon(iconOff)
+	systray.SetTemplateIcon(iconOff, iconOff)
 	systray.SetTitle("")
 	systray.SetTooltip("TUN Proxy")
 
@@ -63,14 +63,14 @@ func onReady() {
 					continue
 				}
 				mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
-				systray.SetIcon(iconOn)
+				systray.SetTemplateIcon(iconOn, iconOn)
 				mConnect.Hide()
 				mDisconnect.Show()
 
 			case <-mDisconnect.ClickedCh:
 				app.Disconnect()
 				mStatus.SetTitle("[OFF] 已断开")
-				systray.SetIcon(iconOff)
+				systray.SetTemplateIcon(iconOff, iconOff)
 				mDisconnect.Hide()
 				mConnect.Show()
 
