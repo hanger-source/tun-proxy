@@ -139,14 +139,14 @@ func (a *App) TestRoute(domain string) string {
 	if rulesDir == "" {
 		rulesDir = config.Dir()
 	}
-	rules := rules.GetRules(rulesDir)
-	if rules != nil {
-		for _, d := range rules.ProxyDomains {
+	rset := rules.GetRules(rulesDir)
+	if rset != nil {
+		for _, d := range rset.ProxyDomains {
 			if domain == d || strings.HasSuffix(domain, "."+d) {
 				return fmt.Sprintf("[PROXY] %s → 代理 (规则匹配)", domain)
 			}
 		}
-		for _, d := range rules.DirectDomains {
+		for _, d := range rset.DirectDomains {
 			if strings.HasSuffix(domain, d) || "."+domain == d {
 				return fmt.Sprintf("[DIRECT] %s → 直连 (规则匹配)", domain)
 			}

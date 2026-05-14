@@ -3,9 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
-	"tun-proxy/internal/config"
 	"tun-proxy/internal/rules"
 
 	"github.com/getlantern/systray"
@@ -111,7 +109,7 @@ func onReady() {
 	systray.AddSeparator()
 	mSubscribe := systray.AddMenuItem("更新订阅", "拉取最新节点")
 	mSetURL := systray.AddMenuItem("设置订阅链接...", "")
-	mSetPAC := systray.AddMenuItem("导入规则文件...", "导入 sing-box 规则集")
+	mSetPAC := systray.AddMenuItem("重新加载规则", "重新读取 ruleset-proxy.json / ruleset-direct.json")
 	mTestRoute := systray.AddMenuItem("测试域名路由...", "输入域名查看走代理还是直连")
 	mAutoStart := systray.AddMenuItemCheckbox("开机启动", "", isAutoStartEnabled())
 	mViewLog := systray.AddMenuItem("查看路由日志", "打开控制台查看连接记录")
@@ -198,31 +196,18 @@ func onReady() {
 				}
 
 			case <-mSetPAC.ClickedCh:
-				path := promptFileChooser("选择 PAC 文件")
-				if path != "" {
-					destPath := filepath.Join(config.Dir(), "rules.js")
-					data, err := os.ReadFile(path)
-					if err == nil {
-						if wErr := os.WriteFile(destPath, data, 0644); wErr != nil {
-							logError("write PAC failed: %v", wErr)
-						}
-						app.Cfg.RulesDir = destPath
+				// Rules are now JSON files in ~/.tun-proxy/ directory
+				// Just clear cache and reconnect to pick up any changes
+				rules.ClearCache()
+				if app.Engine.Connected {
+					app.Disconnect()
+					if err := app.Connect(); err != nil {
+						mStatus.SetTitle("[ERR] " + err.Error())
 					} else {
-						app.Cfg.RulesDir = path
-					}
-					rules.ClearCache()
-					app.SaveConfig()
-					mStatus.SetTitle("规则已导入")
-					showAlert("规则文件已导入")
-					if app.Engine.Connected {
-						app.Disconnect()
-						if err := app.Connect(); err != nil {
-							mStatus.SetTitle("[ERR] " + err.Error())
-						} else {
-							mStatus.SetTitle("[ON] " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
-						}
+						mStatus.SetTitle("[ON] " + app.Cfg.Nodes[app.Cfg.SelectedNode].Name)
 					}
 				}
+				showAlert("规则已重新加载")
 
 			case <-mTestRoute.ClickedCh:
 				domain := promptInput("输入域名测试路由（如 google.com）", "")
