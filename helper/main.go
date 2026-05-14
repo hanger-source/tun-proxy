@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const sockPath = "/var/run/tun-proxy.sock"
@@ -146,12 +147,20 @@ func startSingBox(binary, config, logPath string) error {
 func stopSingBox() {
 	if singboxCmd != nil && singboxCmd.Process != nil {
 		singboxCmd.Process.Signal(syscall.SIGTERM)
-		singboxCmd.Process.Kill()
-		singboxCmd.Wait()
+		done := make(chan struct{})
+		go func() {
+			singboxCmd.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			singboxCmd.Process.Kill()
+			<-done
+		}
 		singboxCmd = nil
 	}
-	// Also kill any orphaned sing-box
-	exec.Command("pkill", "-f", "sing-box run").Run()
+	exec.Command("pkill", "sing-box").Run()
 }
 
 func sendResponse(conn net.Conn, ok bool, msg string) {
