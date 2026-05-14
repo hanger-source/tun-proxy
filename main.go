@@ -62,6 +62,23 @@ func onReady() {
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("退出", "")
 
+	// Auto-connect to last used node on startup
+	if len(app.Nodes) > 0 {
+		go func() {
+			mStatus.SetTitle("连接中...")
+			err := app.Connect()
+			if err != nil {
+				mStatus.SetTitle("[ERR] " + err.Error())
+			} else {
+				mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
+				systray.SetTemplateIcon(iconOn, iconOn)
+				showAlert("已连接: " + app.Nodes[app.SelectedNode].Name)
+				mConnect.Hide()
+				mDisconnect.Show()
+			}
+		}()
+	}
+
 	go func() {
 		for {
 			select {
