@@ -15,13 +15,16 @@ TunProxy 通过 `route_exclude_address` 在路由层面排除代理服务器的 
 
 ## 功能
 
-- 菜单栏常驻，盾牌图标指示连接状态
-- 订阅链接导入（支持 VMess、Shadowsocks 旧格式）
-- PAC 文件分流（通过 JS 引擎执行 `FindProxyForURL`）
-- 节点切换、连通性检测
+- 菜单栏常驻，盾牌图标指示连接状态（自动适配深色/浅色模式）
+- 订阅链接导入（支持 VMess、Shadowsocks 旧格式/SIP002）
+- sing-box 原生规则集分流（`ruleset-proxy.json` / `ruleset-direct.json`）
+- 节点切换、连通性检测、故障自动切换
 - 启动时自动连接上次使用的节点
+- 首次启动自动下载 sing-box
 - Privileged Helper Daemon（首次安装后不再弹密码）
 - 开机启动
+- 域名路由测试（查看某个域名走代理还是直连）
+- 路由日志查看
 
 ## 安装
 
@@ -31,12 +34,9 @@ make build
 
 # 安装到 /Applications
 make install
-
-# 确保 sing-box 二进制存在
-cp /path/to/sing-box ~/.tun-proxy/sing-box
 ```
 
-需要 sing-box 1.11.x（1.12+ 在 macOS 上有 `missing default interface` 问题）。
+首次启动会自动下载 sing-box 1.11.15 并安装 privileged helper。
 
 ## 使用
 
@@ -44,7 +44,30 @@ cp /path/to/sing-box ~/.tun-proxy/sing-box
 2. 首次启动弹出系统授权框安装 helper（仅一次）
 3. 点击「设置订阅链接」填入订阅 URL
 4. 点击「更新订阅」拉取节点
-5. 点击「连接」或选择节点
+5. 自动连接，菜单栏图标变为实心盾牌
+
+## 规则分流
+
+TunProxy 使用 sing-box 原生规则集格式进行分流。规则文件放在 `~/.tun-proxy/` 目录下：
+
+- `ruleset-proxy.json` — 匹配的域名强制走代理
+- `ruleset-direct.json` — 匹配的域名/IP 强制直连
+- 不匹配任何规则的流量 → 走代理（默认）
+- `.cn` 域名 → 直连
+- 私有 IP → 直连
+
+规则文件格式（sing-box rule-set）：
+```json
+{
+  "version": 1,
+  "rules": [
+    {
+      "domain_suffix": ["example.com", "example.org"],
+      "ip_cidr": ["10.0.0.0/8"]
+    }
+  ]
+}
+```
 
 ## 配置文件
 
@@ -52,26 +75,45 @@ cp /path/to/sing-box ~/.tun-proxy/sing-box
 
 ```
 ~/.tun-proxy/
-├── config.json      # 订阅链接、节点、PAC 路径
-├── singbox.json     # 生成的 sing-box 配置
-├── sing-box         # sing-box 二进制
-├── pac.js           # PAC 文件副本
-└── tun-proxy.log    # 日志
+├── config.json           # 订阅链接、节点列表、选中节点
+├── singbox.json          # 生成的 sing-box 配置（自动生成）
+├── sing-box              # sing-box 二进制（自动下载）
+├── ruleset-proxy.json    # 代理规则集
+├── ruleset-direct.json   # 直连规则集
+└── tun-proxy.log         # 日志
 ```
 
 ## 技术原理
 
-1. 创建 TUN 虚拟网卡接管所有流量
+1. 创建 TUN 虚拟网卡（utun）接管所有流量
 2. 通过 `route_exclude_address` 排除代理服务器 IP，防止路由回环
 3. 启动时自动解析代理服务器域名获取最新 IP
-4. PAC 分流：用 goja（Go JS 引擎）执行 PAC 文件，对每个域名调用 `FindProxyForURL` 判断走代理还是直连
+4. 规则分流：加载 JSON 规则集，生成 sing-box 路由配置
 5. Privileged Helper 以 root 运行 sing-box（TUN 需要 root 权限创建网卡）
+6. App 通过 Unix Socket 与 Helper 通信（启动/停止 sing-box）
+
+## 项目结构
+
+```
+├── main.go                    # UI（systray 菜单栏）
+├── app.go                     # 应用逻辑封装
+├── internal/
+│   ├── config/                # 配置管理
+│   ├── engine/                # sing-box 生命周期 + helper 通信
+│   ├── rules/                 # 规则集加载
+│   ├── singbox/               # sing-box 配置生成
+│   └── subscription/          # 订阅解析
+├── helper/                    # Privileged Helper Daemon
+├── installer.go               # Helper 安装（AuthorizationCreate）
+├── download.go                # sing-box 自动下载
+└── assets/                    # 菜单栏图标
+```
 
 ## 依赖
 
-- [sing-box](https://github.com/SagerNet/sing-box) 1.11.x
+- [sing-box](https://github.com/SagerNet/sing-box) 1.11.x（自动下载）
 - [systray](https://github.com/getlantern/systray) — 菜单栏
-- [goja](https://github.com/dop251/goja) — JS 引擎（PAC 执行）
+- macOS Security.framework — 权限提升
 
 ## License
 
