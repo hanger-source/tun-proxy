@@ -150,32 +150,32 @@ func onReady() {
 		}
 	}()
 
-	// Handle node selection
-	go func() {
-		for {
-			for i, item := range nodeItems {
-				select {
-				case <-item.ClickedCh:
-					app.SelectedNode = i
-					for j, it := range nodeItems {
-						if j == i {
-							it.Check()
-						} else {
-							it.Uncheck()
-						}
+	// Handle node selection - launch goroutine per node
+	for i, item := range nodeItems {
+		go func(idx int, menuItem *systray.MenuItem) {
+			for range menuItem.ClickedCh {
+				app.SelectedNode = idx
+				for j, it := range nodeItems {
+					if j == idx {
+						it.Check()
+					} else {
+						it.Uncheck()
 					}
-					app.SaveConfig()
-					if app.Connected {
-						app.Disconnect()
-						app.Connect()
+				}
+				app.SaveConfig()
+				if app.Connected {
+					mStatus.SetTitle("⏳ 切换节点中...")
+					app.Disconnect()
+					err := app.Connect()
+					if err != nil {
+						mStatus.SetTitle("❌ " + err.Error())
+					} else {
 						mStatus.SetTitle("✅ 已连接 - " + app.Nodes[app.SelectedNode].Name)
 					}
-				default:
 				}
 			}
-			sleepMs(100)
-		}
-	}()
+		}(i, item)
+	}
 }
 
 func onExit() {}
