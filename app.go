@@ -39,10 +39,17 @@ func (a *App) SingBoxConfigPath() string {
 }
 
 func (a *App) SingBoxBinary() string {
-	// Look for sing-box in known locations
+	// Try to ensure sing-box exists, download if needed
+	binPath, err := ensureSingBox(a.ConfigDir())
+	if err != nil {
+		logError("ensure sing-box failed: %v", err)
+	}
+	if binPath != "" {
+		return binPath
+	}
+	// Fallback to known locations
 	paths := []string{
 		filepath.Join(a.ConfigDir(), "sing-box"),
-		os.ExpandEnv("$HOME/sing-box-test/sing-box"),
 		"/usr/local/bin/sing-box",
 	}
 	for _, p := range paths {
