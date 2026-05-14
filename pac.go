@@ -68,35 +68,31 @@ func parsePACFile(path string) *PACRules {
 		return nil
 	}
 
-	// Read domain arrays directly from JS VM
+	// Get all domains to test from JS arrays
 	var testDomains []string
 	if arr := vm.Get("domains"); arr != nil {
-		if exported := arr.Export(); exported != nil {
-			if list, ok := exported.([]interface{}); ok {
-				for _, v := range list {
-					if s, ok := v.(string); ok && isValidDomain(s) {
-						testDomains = append(testDomains, s)
-					}
+		if list, ok := arr.Export().([]interface{}); ok {
+			for _, v := range list {
+				if s, ok := v.(string); ok && isValidDomain(s) {
+					testDomains = append(testDomains, s)
 				}
 			}
 		}
 	}
 	if arr := vm.Get("hostArr"); arr != nil {
-		if exported := arr.Export(); exported != nil {
-			if list, ok := exported.([]interface{}); ok {
-				for _, v := range list {
-					if s, ok := v.(string); ok {
-						clean := strings.TrimPrefix(s, "*.")
-						if isValidDomain(clean) {
-							testDomains = append(testDomains, clean)
-						}
+		if list, ok := arr.Export().([]interface{}); ok {
+			for _, v := range list {
+				if s, ok := v.(string); ok {
+					clean := strings.TrimPrefix(s, "*.")
+					if isValidDomain(clean) {
+						testDomains = append(testDomains, clean)
 					}
 				}
 			}
 		}
 	}
 
-	logInfo("PAC: testing %d declared domains via FindProxyForURL", len(testDomains))
+	logInfo("PAC: testing %d domains via FindProxyForURL", len(testDomains))
 
 	findProxy, ok := goja.AssertFunction(vm.Get("FindProxyForURL"))
 	if !ok {
@@ -106,13 +102,14 @@ func parsePACFile(path string) *PACRules {
 
 	rules := &PACRules{}
 	for _, domain := range testDomains {
-		url := "https://" + domain + "/"
-		result, err := findProxy(goja.Undefined(), vm.ToValue(url), vm.ToValue(domain))
+		r, err := findProxy(goja.Undefined(), vm.ToValue("https://"+domain+"/"), vm.ToValue(domain))
 		if err != nil {
 			continue
 		}
-		resultStr := result.String()
-		if strings.Contains(resultStr, "DIRECT") {
+		resultStr := r.String()
+		// PAC returns "DIRECT" for direct, or "SOCKS5 ...; DIRECT;" for proxy
+		// Check if result STARTS with DIRECT (pure direct) vs contains proxy info
+		if resultStr == "DIRECT" || strings.HasPrefix(resultStr, "DIRECT") {
 			rules.DirectDomains = append(rules.DirectDomains, "."+domain)
 		} else {
 			rules.ProxyDomains = append(rules.ProxyDomains, domain)
