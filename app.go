@@ -93,9 +93,11 @@ func (a *App) Connect() error {
 	logInfo("resolved exclude IPs: %v", excludeIPs)
 
 	var pacRules *pac.Rules
-	if a.Cfg.PACPath != "" {
-		pacRules = pac.GetRules(a.Cfg.PACPath)
+	rulesDir := a.Cfg.PACPath
+	if rulesDir == "" {
+		rulesDir = config.Dir()
 	}
+	pacRules = pac.GetRules(rulesDir)
 
 	sbConfig := singbox.GenerateConfig(a.Cfg.Nodes, a.Cfg.SelectedNode, excludeIPs, pacRules)
 	configPath := filepath.Join(config.Dir(), "singbox.json")
@@ -133,18 +135,20 @@ func (a *App) OpenLog() {
 }
 
 func (a *App) TestRoute(domain string) string {
-	if a.Cfg.PACPath != "" {
-		rules := pac.GetRules(a.Cfg.PACPath)
-		if rules != nil {
-			for _, d := range rules.ProxyDomains {
-				if domain == d || strings.HasSuffix(domain, "."+d) {
-					return fmt.Sprintf("[PROXY] %s → 代理 (PAC 黑名单)", domain)
-				}
+	rulesDir := a.Cfg.PACPath
+	if rulesDir == "" {
+		rulesDir = config.Dir()
+	}
+	rules := pac.GetRules(rulesDir)
+	if rules != nil {
+		for _, d := range rules.ProxyDomains {
+			if domain == d || strings.HasSuffix(domain, "."+d) {
+				return fmt.Sprintf("[PROXY] %s → 代理 (规则匹配)", domain)
 			}
-			for _, d := range rules.DirectDomains {
-				if strings.HasSuffix(domain, d) || "."+domain == d {
-					return fmt.Sprintf("[DIRECT] %s → 直连 (PAC 白名单)", domain)
-				}
+		}
+		for _, d := range rules.DirectDomains {
+			if strings.HasSuffix(domain, d) || "."+domain == d {
+				return fmt.Sprintf("[DIRECT] %s → 直连 (规则匹配)", domain)
 			}
 		}
 	}

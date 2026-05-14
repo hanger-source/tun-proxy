@@ -111,7 +111,7 @@ func onReady() {
 	systray.AddSeparator()
 	mSubscribe := systray.AddMenuItem("更新订阅", "拉取最新节点")
 	mSetURL := systray.AddMenuItem("设置订阅链接...", "")
-	mSetPAC := systray.AddMenuItem("设置 PAC 文件路径...", "白名单域名直连")
+	mSetPAC := systray.AddMenuItem("导入规则文件...", "导入 sing-box 规则集")
 	mTestRoute := systray.AddMenuItem("测试域名路由...", "输入域名查看走代理还是直连")
 	mAutoStart := systray.AddMenuItemCheckbox("开机启动", "", isAutoStartEnabled())
 	mViewLog := systray.AddMenuItem("查看路由日志", "打开控制台查看连接记录")
@@ -212,8 +212,8 @@ func onReady() {
 					}
 					pac.ClearCache()
 					app.SaveConfig()
-					mStatus.SetTitle("PAC 已设置")
-					showAlert("PAC 文件已设置")
+					mStatus.SetTitle("规则已导入")
+					showAlert("规则文件已导入")
 					if app.Engine.Connected {
 						app.Disconnect()
 						if err := app.Connect(); err != nil {
