@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"tun-proxy/internal/config"
-	"tun-proxy/internal/pac"
+	"tun-proxy/internal/rules"
 
 	"github.com/getlantern/systray"
 )
@@ -200,17 +200,17 @@ func onReady() {
 			case <-mSetPAC.ClickedCh:
 				path := promptFileChooser("选择 PAC 文件")
 				if path != "" {
-					destPath := filepath.Join(config.Dir(), "pac.js")
+					destPath := filepath.Join(config.Dir(), "rules.js")
 					data, err := os.ReadFile(path)
 					if err == nil {
 						if wErr := os.WriteFile(destPath, data, 0644); wErr != nil {
 							logError("write PAC failed: %v", wErr)
 						}
-						app.Cfg.PACPath = destPath
+						app.Cfg.RulesDir = destPath
 					} else {
-						app.Cfg.PACPath = path
+						app.Cfg.RulesDir = path
 					}
-					pac.ClearCache()
+					rules.ClearCache()
 					app.SaveConfig()
 					mStatus.SetTitle("规则已导入")
 					showAlert("规则文件已导入")

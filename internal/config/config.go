@@ -19,7 +19,7 @@ type Node struct {
 
 type Config struct {
 	SubscribeURL string `json:"subscribe_url"`
-	PACPath      string `json:"pac_path"`
+	RulesDir      string `json:"rules_dir"`
 	Nodes        []Node `json:"nodes"`
 	SelectedNode int    `json:"selected_node"`
 }

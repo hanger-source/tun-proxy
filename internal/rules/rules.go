@@ -1,4 +1,4 @@
-package pac
+package rules
 
 import (
 	"crypto/md5"

@@ -3,7 +3,7 @@ package singbox
 import (
 	"net"
 	"tun-proxy/internal/config"
-	"tun-proxy/internal/pac"
+	"tun-proxy/internal/rules"
 )
 
 func ResolveServerIPs(nodes []config.Node) []string {
@@ -30,7 +30,7 @@ func ResolveServerIPs(nodes []config.Node) []string {
 	return ips
 }
 
-func GenerateConfig(nodes []config.Node, selected int, excludeIPs []string, pacRules *pac.Rules) map[string]interface{} {
+func GenerateConfig(nodes []config.Node, selected int, excludeIPs []string, ruleSet *rules.Rules) map[string]interface{} {
 	var outboundNames []string
 	var outbounds []map[string]interface{}
 
@@ -91,15 +91,15 @@ func GenerateConfig(nodes []config.Node, selected int, excludeIPs []string, pacR
 		{"ip_is_private": true, "outbound": "direct"},
 		{"domain_suffix": ".cn", "outbound": "direct"},
 	}
-	if pacRules != nil {
-		if len(pacRules.ProxyDomains) > 0 {
-			routeRules = append(routeRules, map[string]interface{}{"domain": pacRules.ProxyDomains, "outbound": "proxy"})
+	if ruleSet != nil {
+		if len(ruleSet.ProxyDomains) > 0 {
+			routeRules = append(routeRules, map[string]interface{}{"domain": ruleSet.ProxyDomains, "outbound": "proxy"})
 		}
-		if len(pacRules.DirectDomains) > 0 {
-			routeRules = append(routeRules, map[string]interface{}{"domain_suffix": pacRules.DirectDomains, "outbound": "direct"})
+		if len(ruleSet.DirectDomains) > 0 {
+			routeRules = append(routeRules, map[string]interface{}{"domain_suffix": ruleSet.DirectDomains, "outbound": "direct"})
 		}
-		if len(pacRules.DirectCIDRs) > 0 {
-			routeRules = append(routeRules, map[string]interface{}{"ip_cidr": pacRules.DirectCIDRs, "outbound": "direct"})
+		if len(ruleSet.DirectCIDRs) > 0 {
+			routeRules = append(routeRules, map[string]interface{}{"ip_cidr": ruleSet.DirectCIDRs, "outbound": "direct"})
 		}
 	}
 

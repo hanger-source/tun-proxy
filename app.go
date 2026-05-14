@@ -11,7 +11,7 @@ import (
 
 	"tun-proxy/internal/config"
 	"tun-proxy/internal/engine"
-	"tun-proxy/internal/pac"
+	"tun-proxy/internal/rules"
 	"tun-proxy/internal/singbox"
 	"tun-proxy/internal/subscription"
 )
@@ -92,14 +92,14 @@ func (a *App) Connect() error {
 	excludeIPs := singbox.ResolveServerIPs(a.Cfg.Nodes)
 	logInfo("resolved exclude IPs: %v", excludeIPs)
 
-	var pacRules *pac.Rules
-	rulesDir := a.Cfg.PACPath
+	var ruleSet *rules.Rules
+	rulesDir := a.Cfg.RulesDir
 	if rulesDir == "" {
 		rulesDir = config.Dir()
 	}
-	pacRules = pac.GetRules(rulesDir)
+	ruleSet = rules.GetRules(rulesDir)
 
-	sbConfig := singbox.GenerateConfig(a.Cfg.Nodes, a.Cfg.SelectedNode, excludeIPs, pacRules)
+	sbConfig := singbox.GenerateConfig(a.Cfg.Nodes, a.Cfg.SelectedNode, excludeIPs, ruleSet)
 	configPath := filepath.Join(config.Dir(), "singbox.json")
 	data, err := json.MarshalIndent(sbConfig, "", "  ")
 	if err != nil {
@@ -135,11 +135,11 @@ func (a *App) OpenLog() {
 }
 
 func (a *App) TestRoute(domain string) string {
-	rulesDir := a.Cfg.PACPath
+	rulesDir := a.Cfg.RulesDir
 	if rulesDir == "" {
 		rulesDir = config.Dir()
 	}
-	rules := pac.GetRules(rulesDir)
+	rules := rules.GetRules(rulesDir)
 	if rules != nil {
 		for _, d := range rules.ProxyDomains {
 			if domain == d || strings.HasSuffix(domain, "."+d) {
