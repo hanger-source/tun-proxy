@@ -14,13 +14,13 @@ func main() {
 }
 
 func onReady() {
-	systray.SetTitle("⚡")
+	systray.SetTitle("TP")
 	systray.SetTooltip("TUN Proxy")
 
 	app := NewApp()
 	app.LoadConfig()
 
-	mStatus := systray.AddMenuItem("⏹ 已断开", "")
+	mStatus := systray.AddMenuItem("[OFF] 已断开", "")
 	mStatus.Disable()
 	systray.AddSeparator()
 
@@ -52,24 +52,24 @@ func onReady() {
 			select {
 			case <-mConnect.ClickedCh:
 				if len(app.Nodes) == 0 {
-					mStatus.SetTitle("❌ 无节点，请先设置订阅")
+					mStatus.SetTitle("[ERR] 无节点，请先设置订阅")
 					continue
 				}
-				mStatus.SetTitle("⏳ 连接中...")
+				mStatus.SetTitle("连接中...")
 				err := app.Connect()
 				if err != nil {
-					mStatus.SetTitle("❌ " + err.Error())
+					mStatus.SetTitle("[ERR] " + err.Error())
 					continue
 				}
-				mStatus.SetTitle("✅ 已连接 - " + app.Nodes[app.SelectedNode].Name)
-				systray.SetTitle("🟢")
+				mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
+				systray.SetTitle("TP")
 				mConnect.Hide()
 				mDisconnect.Show()
 
 			case <-mDisconnect.ClickedCh:
 				app.Disconnect()
-				mStatus.SetTitle("⏹ 已断开")
-				systray.SetTitle("⚡")
+				mStatus.SetTitle("[OFF] 已断开")
+				systray.SetTitle("TP")
 				mDisconnect.Hide()
 				mConnect.Show()
 
@@ -77,7 +77,7 @@ func onReady() {
 				mStatus.SetTitle("⏳ 更新订阅中...")
 				err := app.UpdateSubscription()
 				if err != nil {
-					mStatus.SetTitle("❌ " + err.Error())
+					mStatus.SetTitle("[ERR] " + err.Error())
 					continue
 				}
 				// Rebuild node menu
@@ -91,14 +91,14 @@ func onReady() {
 				}
 				app.SelectedNode = 0
 				app.SaveConfig()
-				mStatus.SetTitle(fmt.Sprintf("✅ 已更新 %d 个节点", len(app.Nodes)))
+				mStatus.SetTitle(fmt.Sprintf("已更新 %d 个节点", len(app.Nodes)))
 
 			case <-mSetURL.ClickedCh:
 				url := promptInput("输入订阅链接（完整 URL）", app.SubscribeURL)
 				if url != "" {
 					app.SubscribeURL = url
 					app.SaveConfig()
-					mStatus.SetTitle("✅ 订阅链接已保存，请点击「更新订阅」")
+					mStatus.SetTitle("订阅链接已保存，请点击「更新订阅」")
 					showAlert("订阅链接已保存")
 				}
 
@@ -108,12 +108,12 @@ func onReady() {
 					app.PACPath = path
 					ClearPACCache()
 					app.SaveConfig()
-					mStatus.SetTitle("✅ PAC: " + path)
+					mStatus.SetTitle("PAC: " + path)
 					showAlert("PAC 文件已设置")
 					if app.Connected {
 						app.Disconnect()
 						app.Connect()
-						mStatus.SetTitle("✅ 已连接 - " + app.Nodes[app.SelectedNode].Name + " (PAC)")
+						mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name + " (PAC)")
 					}
 				}
 
@@ -165,13 +165,13 @@ func onReady() {
 				}
 				app.SaveConfig()
 				if app.Connected {
-					mStatus.SetTitle("⏳ 切换节点中...")
+					mStatus.SetTitle("切换中...")
 					app.Disconnect()
 					err := app.Connect()
 					if err != nil {
-						mStatus.SetTitle("❌ " + err.Error())
+						mStatus.SetTitle("[ERR] " + err.Error())
 					} else {
-						mStatus.SetTitle("✅ 已连接 - " + app.Nodes[app.SelectedNode].Name)
+						mStatus.SetTitle("[ON] " + app.Nodes[app.SelectedNode].Name)
 					}
 				}
 			}

@@ -249,13 +249,13 @@ func (a *App) TestRoute(domain string) string {
 		if rules != nil {
 			for _, d := range rules.ProxyDomains {
 				if domain == d || strings.HasSuffix(domain, "."+d) {
-					return fmt.Sprintf("🔵 %s → 代理 (PAC 黑名单)", domain)
+					return fmt.Sprintf("[PROXY] %s → 代理 (PAC 黑名单)", domain)
 				}
 			}
 			for _, d := range rules.DirectDomains {
 				suffix := d // already has leading dot
 				if strings.HasSuffix(domain, suffix) || "."+domain == suffix {
-					return fmt.Sprintf("⚪ %s → 直连 (PAC 白名单)", domain)
+					return fmt.Sprintf("[DIRECT] %s → 直连 (PAC 白名单)", domain)
 				}
 			}
 		}
@@ -263,8 +263,8 @@ func (a *App) TestRoute(domain string) string {
 
 	// Check built-in rules
 	if strings.HasSuffix(domain, ".cn") {
-		return fmt.Sprintf("⚪ %s → 直连 (.cn)", domain)
+		return fmt.Sprintf("[DIRECT] %s → 直连 (.cn)", domain)
 	}
 
-	return fmt.Sprintf("🔵 %s → 代理 (默认规则)", domain)
+	return fmt.Sprintf("[PROXY] %s → 代理 (默认规则)", domain)
 }
