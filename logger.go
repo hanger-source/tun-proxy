@@ -9,25 +9,20 @@ import (
 )
 
 var logger *log.Logger
+var logFile *os.File
 
 func initLogger() {
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, ".tun-proxy")
 	os.MkdirAll(dir, 0755)
 	logPath := filepath.Join(dir, "tun-proxy.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	var err error
+	logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		logger = log.New(os.Stderr, "", log.LstdFlags)
+		logger = log.New(os.Stderr, "", 0)
 		return
 	}
-	logger = log.New(f, "", log.LstdFlags)
-	// Also print to stderr
-	logger.SetOutput(os.Stderr)
-	logger = log.New(f, "", 0)
-
-	// Use custom format
-	log.SetOutput(f)
-	log.SetFlags(0)
+	logger = log.New(logFile, "", 0)
 }
 
 func logInfo(format string, args ...interface{}) {

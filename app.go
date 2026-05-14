@@ -85,8 +85,15 @@ func (a *App) UpdateSubscription() error {
 	}
 	a.Nodes = nodes
 	a.SelectedNode = 0
+	// Prefer first vmess node as default (SS nodes may be unreliable)
+	for i, n := range nodes {
+		if n.Type == "vmess" {
+			a.SelectedNode = i
+			break
+		}
+	}
 	a.SaveConfig()
-	logInfo("subscription updated: %d nodes", len(nodes))
+	logInfo("subscription updated: %d nodes, default: [%d] %s", len(nodes), a.SelectedNode, nodes[a.SelectedNode].Name)
 	for i, n := range nodes {
 		logInfo("  [%d] %s (%s) %s:%d", i, n.Name, n.Type, n.Server, n.Port)
 	}
@@ -125,8 +132,6 @@ func (a *App) Connect() error {
 	logInfo("sing-box binary: %s", binary)
 
 	// Open log file for sing-box output
-	logFile, _ := os.OpenFile(a.SingBoxLogPath(), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-
 	a.cmd = exec.Command("sudo", "-n", binary, "run", "-c", a.SingBoxConfigPath())
 	a.cmd.Stdout = logFile
 	a.cmd.Stderr = logFile
@@ -169,13 +174,11 @@ func (a *App) Disconnect() {
 }
 
 func (a *App) SingBoxLogPath() string {
-	return filepath.Join(a.ConfigDir(), "singbox-route.log")
+	return filepath.Join(a.ConfigDir(), "tun-proxy.log")
 }
 
 func (a *App) OpenLog() {
-	logPath := a.SingBoxLogPath()
-	// Open in Console.app
-	exec.Command("open", "-a", "Console", logPath).Run()
+	exec.Command("open", "-a", "Console", a.SingBoxLogPath()).Run()
 }
 
 func resolveServerIPs(nodes []Node) []string {
